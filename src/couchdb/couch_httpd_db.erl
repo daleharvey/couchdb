@@ -212,11 +212,13 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
     end.
 
 do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|Rest]}=Req, Fun) ->
-    IsDesign = case Rest of
-                   [<<"_design">>|_] -> true;
-                   _                 -> false
-               end,
-    case couch_db:open(DbName, [{user_ctx, UserCtx}], IsDesign) of
+    AnonDesign = true, %% Fetch the flag (from config?)
+    IsDesign   = case Rest of
+                     [<<"_design">>|_] -> true;
+                     _                 -> false
+                 end,
+    SkipCheck  = AnonDesign andalso isDesign,
+    case couch_db:open(DbName, [{user_ctx, UserCtx}], SkipCheck) of
     {ok, Db} ->
         try
             Fun(Req, Db)
