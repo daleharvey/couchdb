@@ -211,8 +211,12 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
         throw(Error)
     end.
 
-do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
-    case couch_db:open(DbName, [{user_ctx, UserCtx}]) of
+do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|Rest]}=Req, Fun) ->
+    IsDesign = case Rest of
+                   [<<"_design">>|_] -> true;
+                   _                 -> false
+               end,
+    case couch_db:open(DbName, [{user_ctx, UserCtx}], IsDesign) of
     {ok, Db} ->
         try
             Fun(Req, Db)
