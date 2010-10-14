@@ -211,23 +211,34 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
         throw(Error)
     end.
 
-do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|Rest]}=Req, Fun) ->
-    AnonDesign = true, %% Fetch the flag (from config?)
-    IsDesign   = case Rest of
-                     [<<"_design">>|_] -> true;
-                     _                 -> false
-                 end,
-    SkipCheck  = AnonDesign andalso isDesign,
+do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
+    Anon = couch_config:get("couch_httpd_auth", "anonymous_design_doc", false),
+    SkipCheck = to_bool(AnonDesign) andalso
+        not requires_auth(Req#httpd.path_parts),
     case couch_db:open(DbName, [{user_ctx, UserCtx}], SkipCheck) of
-    {ok, Db} ->
-        try
-            Fun(Req, Db)
-        after
-            catch couch_db:close(Db)
-        end;
-    Error ->
-        throw(Error)
+        {ok, Db} ->
+            try
+                Fun(Req, Db)
+                after
+                    catch couch_db:close(Db)
+                end;
+        Error ->
+            throw(Error)
     end.
+
+requires_auth(Path) ->
+    case Path of
+        [_DbName, <<"_design">>, _Name, <<"_view">>|_] -> true;
+        [_DbName, <<"_design">>, _Name, <<"_show">>|_] -> true;
+        [_DbName, <<"_design">>, _Name, <<"_list">>|_] -> true;
+        [_DbName, <<"_design">>|_]                     -> false;
+        _                                              -> true
+    end.
+
+to_bool("true") ->
+    true;
+to_bool(_Else) ->
+    false.
 
 db_req(#httpd{method='GET',path_parts=[_DbName]}=Req, Db) ->
     {ok, DbInfo} = couch_db:get_db_info(Db),

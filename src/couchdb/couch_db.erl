@@ -76,7 +76,7 @@ open(DbName, Options) ->
     open(DbName, Options, false).
  
 open(DbName, Options, SkipCheck) ->
-    case couch_server:open(DbName, Options) of
+     case couch_server:open(DbName, Options) of
         {ok, Db} ->
             try
                 case SkipCheck of
