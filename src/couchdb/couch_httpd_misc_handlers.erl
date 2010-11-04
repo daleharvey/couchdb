@@ -97,7 +97,7 @@ handle_replicate_req(#httpd{method='POST'}=Req) ->
             send_json(Req, 500, {[{error, Reason}]})
         catch
         exit:{json_encode, _} ->
-            send_json(Req, 500, {[{error, couch_util:to_binary(Reason)}]})
+            send_json(Req, 500, {[{error, httpd_util:to_binary(Reason)}]})
         end
     catch
     throw:{db_not_found, Msg} ->

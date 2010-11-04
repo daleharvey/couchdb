@@ -36,7 +36,7 @@ test() ->
     couch_server_sup:start_link([default_config()]),
     put(addr, couch_config:get("httpd", "bind_address", "127.0.0.1")),
     put(port, couch_config:get("httpd", "port", "5984")),
-    application:start(inets),
+    ibrowse:start(),
     timer:sleep(1000),
     couch_server:delete(test_db_name(), []),
     couch_db:create(test_db_name(), []),
@@ -85,23 +85,21 @@ db_url() ->
     binary_to_list(test_db_name()).
 
 create_1st_text_att() ->
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {db_url() ++ "/testdoc1/readme.txt", [],
-        "text/plain", test_text_data()},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 201, "Created text attachment using the standalone api"),
+    {ok, Code, _Hdrs, _Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc1/readme.txt",
+                         [{"Content-Type", "text/plain"}],
+                         put,
+                         test_text_data()),    
+    etap:is(Code, "201", "Created text attachment using the standalone api"),
     ok.
 
 create_1st_png_att() ->
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {db_url() ++ "/testdoc2/icon.png", [],
-        "image/png", test_png_data()},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 201, "Created png attachment using the standalone api"),
+    {ok, Code, _Hdrs, _Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc2/icon.png",
+                         [{"Content-Type", "image/png"}],
+                         put,
+                         test_png_data()),    
+    etap:is(Code, "201", "Created png attachment using the standalone api"),
     ok.
 
 % create a text attachment using the non-standalone attachment api
@@ -114,13 +112,13 @@ create_2nd_text_att() ->
             ]}
         }]}}
     ]},
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {db_url() ++ "/testdoc3", [],
-        "application/json", list_to_binary(couch_util:json_encode(DocJson))},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 201, "Created text attachment using the non-standalone api"),
+
+    {ok, Code, _Hdrs, _Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc3",
+                         [{"Content-Type", "application/json"}],
+                         put,
+                         list_to_binary(couch_util:json_encode(DocJson))),    
+    etap:is(Code,"201","Created text attachment using the non-standalone api"),
     ok.
 
 % create a png attachment using the non-standalone attachment api
@@ -133,25 +131,29 @@ create_2nd_png_att() ->
             ]}
         }]}}
     ]},
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {db_url() ++ "/testdoc4", [],
-        "application/json", list_to_binary(couch_util:json_encode(DocJson))},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 201, "Created png attachment using the non-standalone api"),
+
+    io:format("~p~n", [DocJson]),
+    
+    {ok, Code, _Hdrs, _Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc4",
+                         [{"Content-Type", "application/json"}],
+                         put,
+                         list_to_binary(couch_util:json_encode(DocJson))),    
+
+    etap:is(Code, "201", "Created png attachment using the non-standalone api"),
     ok.
 
 create_already_compressed_att(DocUri, AttName) ->
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {DocUri ++ "/" ++ AttName, [{"Content-Encoding", "gzip"}],
-        "text/plain", zlib:gzip(test_text_data())},
-        [],
-        [{sync, true}]),
+    {ok, Code, _Hdrs, _Body} =
+        ibrowse:send_req(DocUri ++ "/" ++ AttName,
+                         [{"Content-Encoding", "gzip"},
+                          {"Content-Type", "text/plain"}],
+                         put,
+                         zlib:gzip(test_text_data())),   
+    
     etap:is(
         Code,
-        201,
+        "201",
         "Created already compressed attachment using the standalone api"
     ),
     ok.
@@ -184,13 +186,13 @@ tests_for_2nd_png_att() ->
     test_2nd_png_att_stub().
 
 test_get_1st_text_att_with_accept_encoding_gzip() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1/readme.txt", [{"Accept-Encoding", "gzip"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc1/readme.txt",
+                                  [{"Accept-Encoding", "gzip"}],
+                                  get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, true, "received body is gziped"),
     Uncompressed = binary_to_list(zlib:gunzip(list_to_binary(Body))),
     etap:is(
@@ -201,13 +203,14 @@ test_get_1st_text_att_with_accept_encoding_gzip() ->
     ok.
 
 test_get_1st_text_att_without_accept_encoding_header() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1/readme.txt", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc1/readme.txt",
+                                  [],
+                                  get),
+    
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -217,15 +220,14 @@ test_get_1st_text_att_without_accept_encoding_header() ->
     ok.
 
 test_get_1st_text_att_with_accept_encoding_deflate() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1/readme.txt", [{"Accept-Encoding", "deflate"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc1/readme.txt",
+                                  [{"Accept-Encoding", "deflate"}],
+                                  get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
-    Deflated = lists:member({"content-encoding", "deflate"}, Headers),
+    Deflated = lists:member({"Content-Encoding", "deflate"}, Headers),
     etap:is(Deflated, false, "received body is not deflated"),
     etap:is(
         Body,
@@ -235,27 +237,24 @@ test_get_1st_text_att_with_accept_encoding_deflate() ->
     ok.
 
 test_get_1st_text_att_with_accept_encoding_deflate_only() ->
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1/readme.txt",
-            [{"Accept-Encoding", "deflate, *;q=0"}]},
-        [],
-        [{sync, true}]),
+    {ok, Code, _Headers, _Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc1/readme.txt",
+                         [{"Accept-Encoding", "deflate, *;q=0"}],
+                         get),
     etap:is(
         Code,
-        406,
+        "406",
         "HTTP response code is 406 for an unsupported content encoding request"
     ),
     ok.
 
 test_get_1st_png_att_without_accept_encoding_header() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc2/icon.png", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc2/icon.png",
+                                  [],
+                                  get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -265,13 +264,12 @@ test_get_1st_png_att_without_accept_encoding_header() ->
     ok.
 
 test_get_1st_png_att_with_accept_encoding_gzip() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc2/icon.png", [{"Accept-Encoding", "gzip"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc2/icon.png",
+                                  [{"Accept-Encoding", "gzip"}],
+                                  get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -281,15 +279,14 @@ test_get_1st_png_att_with_accept_encoding_gzip() ->
     ok.
 
 test_get_1st_png_att_with_accept_encoding_deflate() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc2/icon.png", [{"Accept-Encoding", "deflate"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Deflated = lists:member({"content-encoding", "deflate"}, Headers),
+    {ok, Code, Headers, Body} = ibrowse:send_req(
+                                  db_url() ++ "/testdoc2/icon.png",
+                                  [{"Accept-Encoding", "deflate"}],
+                                  get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Deflated = lists:member({"Content-Encoding", "deflate"}, Headers),
     etap:is(Deflated, false, "received body is not deflated"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -299,12 +296,11 @@ test_get_1st_png_att_with_accept_encoding_deflate() ->
     ok.
 
 test_get_doc_with_1st_text_att() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1?attachments=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url()  ++ "/testdoc1?attachments=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     TextAttJson = couch_util:get_nested_json_value(
         Json,
@@ -333,12 +329,11 @@ test_get_doc_with_1st_text_att() ->
     ok.
 
 test_1st_text_att_stub() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc1?att_encoding_info=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc1?att_encoding_info=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     {TextAttJson} = couch_util:get_nested_json_value(
         Json,
@@ -365,12 +360,11 @@ test_1st_text_att_stub() ->
     ok.
 
 test_get_doc_with_1st_png_att() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc2?attachments=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc2?attachments=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     PngAttJson = couch_util:get_nested_json_value(
         Json,
@@ -393,12 +387,11 @@ test_get_doc_with_1st_png_att() ->
     ok.
 
 test_1st_png_att_stub() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc2?att_encoding_info=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc2?att_encoding_info=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     {PngAttJson} = couch_util:get_nested_json_value(
         Json,
@@ -425,13 +418,12 @@ test_1st_png_att_stub() ->
     ok.
 
 test_get_2nd_text_att_with_accept_encoding_gzip() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc3/readme.txt", [{"Accept-Encoding", "gzip"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc3/readme.txt",
+                         [{"Accept-Encoding", "gzip"}],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, true, "received body is gziped"),
     Uncompressed = binary_to_list(zlib:gunzip(list_to_binary(Body))),
     etap:is(
@@ -442,13 +434,12 @@ test_get_2nd_text_att_with_accept_encoding_gzip() ->
     ok.
 
 test_get_2nd_text_att_without_accept_encoding_header() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc3/readme.txt", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc3/readme.txt",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -458,13 +449,12 @@ test_get_2nd_text_att_without_accept_encoding_header() ->
     ok.
 
 test_get_2nd_png_att_without_accept_encoding_header() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc4/icon.png", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc4/icon.png",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -474,13 +464,12 @@ test_get_2nd_png_att_without_accept_encoding_header() ->
     ok.
 
 test_get_2nd_png_att_with_accept_encoding_gzip() ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc4/icon.png", [{"Accept-Encoding", "gzip"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc4/icon.png",
+                         [{"Accept-Encoding", "gzip"}],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         Body,
@@ -490,12 +479,11 @@ test_get_2nd_png_att_with_accept_encoding_gzip() ->
     ok.
 
 test_get_doc_with_2nd_text_att() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc3?attachments=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc3?attachments=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     TextAttJson = couch_util:get_nested_json_value(
         Json,
@@ -520,12 +508,11 @@ test_get_doc_with_2nd_text_att() ->
     ok.
 
 test_2nd_text_att_stub() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc3?att_encoding_info=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc3?att_encoding_info=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     {TextAttJson} = couch_util:get_nested_json_value(
         Json,
@@ -552,12 +539,11 @@ test_2nd_text_att_stub() ->
     ok.
 
 test_get_doc_with_2nd_png_att() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc4?attachments=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc4?attachments=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     PngAttJson = couch_util:get_nested_json_value(
         Json,
@@ -580,12 +566,11 @@ test_get_doc_with_2nd_png_att() ->
     ok.
 
 test_2nd_png_att_stub() ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {db_url() ++ "/testdoc4?att_encoding_info=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(db_url() ++ "/testdoc4?att_encoding_info=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     {PngAttJson} = couch_util:get_nested_json_value(
         Json,
@@ -617,13 +602,12 @@ test_already_compressed_att(DocUri, AttName) ->
     test_get_already_compressed_att_stub(DocUri, AttName).
 
 test_get_already_compressed_att_with_accept_gzip(DocUri, AttName) ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {DocUri ++ "/" ++ AttName, [{"Accept-Encoding", "gzip"}]},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(DocUri ++ "/" ++ AttName,
+                         [{"Accept-Encoding", "gzip"}],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, true, "received body is gziped"),
     etap:is(
         iolist_to_binary(Body),
@@ -633,13 +617,12 @@ test_get_already_compressed_att_with_accept_gzip(DocUri, AttName) ->
     ok.
 
 test_get_already_compressed_att_without_accept(DocUri, AttName) ->
-    {ok, {{_, Code, _}, Headers, Body}} = http:request(
-        get,
-        {DocUri ++ "/" ++ AttName, []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
-    Gziped = lists:member({"content-encoding", "gzip"}, Headers),
+    {ok, Code, Headers, Body} =
+        ibrowse:send_req(DocUri ++ "/" ++ AttName,
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
+    Gziped = lists:member({"Content-Encoding", "gzip"}, Headers),
     etap:is(Gziped, false, "received body is not gziped"),
     etap:is(
         iolist_to_binary(Body),
@@ -649,12 +632,11 @@ test_get_already_compressed_att_without_accept(DocUri, AttName) ->
     ok.
 
 test_get_already_compressed_att_stub(DocUri, AttName) ->
-    {ok, {{_, Code, _}, _Headers, Body}} = http:request(
-        get,
-        {DocUri ++ "?att_encoding_info=true", []},
-        [],
-        [{sync, true}]),
-    etap:is(Code, 200, "HTTP response code is 200"),
+    {ok, Code, _Headers, Body} =
+        ibrowse:send_req(DocUri ++ "?att_encoding_info=true",
+                         [],
+                         get),
+    etap:is(Code, "200", "HTTP response code is 200"),
     Json = couch_util:json_decode(Body),
     {AttJson} = couch_util:get_nested_json_value(
         Json,
@@ -684,15 +666,15 @@ test_get_already_compressed_att_stub(DocUri, AttName) ->
 
 test_create_already_compressed_att_with_invalid_content_encoding(
     DocUri, AttName, AttData, Encoding) ->
-    {ok, {{_, Code, _}, _Headers, _Body}} = http:request(
-        put,
-        {DocUri ++ "/" ++ AttName, [{"Content-Encoding", Encoding}],
-        "text/plain", AttData},
-        [],
-        [{sync, true}]),
+    {ok, Code, _Headers, _Body} =
+        ibrowse:send_req(DocUri ++ "/" ++ AttName,
+                         [{"Content-Encoding", Encoding},
+                          {"Content-Type", "text/plain"}],
+                         put,
+                         AttData),
     etap:is(
         Code,
-        415,
+        "415",
         "Couldn't create an already compressed attachment using the "
         "unsupported encoding '" ++ Encoding ++ "'"
     ),
