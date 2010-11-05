@@ -37,6 +37,7 @@ authentication_redirect = /_utils/session.html
 require_valid_user = false
 timeout = 43200 ; (default to 12 hours) number of seconds before automatic logout
 auth_cache_size = 50 ; size is number of cache entries
+anonymous_design_doc = true ; allow anonymouse users to access design doc attachments
 
 [query_servers]
 javascript = %bindir%/%couchjs_command_name% %localbuilddatadir%/server/main.js

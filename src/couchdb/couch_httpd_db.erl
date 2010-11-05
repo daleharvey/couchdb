@@ -213,8 +213,7 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
 
 do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
     Anon = couch_config:get("couch_httpd_auth", "anonymous_design_doc", false),
-    SkipCheck = to_bool(AnonDesign) andalso
-        not requires_auth(Req#httpd.path_parts),
+    SkipCheck = to_bool(Anon) andalso is_design_attachment(Req),
     case couch_db:open(DbName, [{user_ctx, UserCtx}], SkipCheck) of
         {ok, Db} ->
             try
@@ -226,14 +225,12 @@ do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
             throw(Error)
     end.
 
-requires_auth(Path) ->
-    case Path of
-        [_DbName, <<"_design">>, _Name, <<"_view">>|_] -> true;
-        [_DbName, <<"_design">>, _Name, <<"_show">>|_] -> true;
-        [_DbName, <<"_design">>, _Name, <<"_list">>|_] -> true;
-        [_DbName, <<"_design">>|_]                     -> false;
-        _                                              -> true
-    end.
+is_design_attachment(#httpd{path_parts=[_,<<"_design">>,<<"_",_/binary>>|_]}) ->
+    false;
+is_design_attachment(#httpd{path_parts=[_, <<"_design">> | Path]}) ->
+    length(Path) > 1;
+is_design_attachment(_) ->
+    false.
 
 to_bool("true") ->
     true;
