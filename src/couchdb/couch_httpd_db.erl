@@ -212,8 +212,10 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
     end.
 
 do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
-    Anon = couch_config:get("couch_httpd_auth", "anonymous_design_doc", false),
-    SkipCheck = to_bool(Anon) andalso is_design_attachment(Req),
+    
+    SkipCheck = dict:fetch(anon_design_doc, Req#httpd.opaque)
+        andalso is_design_attachment(Req),
+    
     case couch_db:open(DbName, [{user_ctx, UserCtx}], SkipCheck) of
         {ok, Db} ->
             try
@@ -230,11 +232,6 @@ is_design_attachment(#httpd{path_parts=[_,<<"_design">>,<<"_",_/binary>>|_]}) ->
 is_design_attachment(#httpd{path_parts=[_, <<"_design">> | Path]}) ->
     length(Path) > 1;
 is_design_attachment(_) ->
-    false.
-
-to_bool("true") ->
-    true;
-to_bool(_Else) ->
     false.
 
 db_req(#httpd{method='GET',path_parts=[_DbName]}=Req, Db) ->

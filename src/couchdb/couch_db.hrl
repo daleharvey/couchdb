@@ -80,7 +80,8 @@
     design_url_handlers,
     auth,
     default_fun,
-    url_handlers
+    url_handlers,
+    opaque
     }).
 
 

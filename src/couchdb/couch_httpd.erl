@@ -13,7 +13,7 @@
 -module(couch_httpd).
 -include("couch_db.hrl").
 
--export([start_link/0, start_link/1, stop/0, handle_request/5]).
+-export([start_link/0, start_link/1, stop/0, handle_request/6]).
 
 -export([header_value/2,header_value/3,qs_value/2,qs_value/3,qs/1,path/1,absolute_uri/2,body_length/1]).
 -export([verify_is_server_admin/1,unquote/1,quote/1,recv/2,recv_chunked/4,error_info/1]).
@@ -26,7 +26,7 @@
 -export([start_json_response/2, start_json_response/3, end_json_response/1]).
 -export([send_response/4,send_method_not_allowed/2,send_error/4, send_redirect/2,send_chunked_error/2]).
 -export([send_json/2,send_json/3,send_json/4,last_chunk/1,parse_multipart_request/3]).
--export([accepted_encodings/1,handle_request_int/5,validate_referer/1,validate_ctype/2]).
+-export([accepted_encodings/1,handle_request_int/6,validate_referer/1,validate_ctype/2]).
 
 start_link() ->
     start_link(http).
@@ -78,12 +78,21 @@ start_link(Name, Options) ->
             {?l2b(UrlKey), make_arity_3_fun(SpecStr)}
         end, couch_config:get("httpd_design_handlers")),
 
+    OpaqueList = [
+        {anon_design_doc,
+         to_bool(couch_config:get("couch_httpd_auth", "anonymous_design_doc"))}
+    ],
+
     UrlHandlers = dict:from_list(UrlHandlersList),
     DbUrlHandlers = dict:from_list(DbUrlHandlersList),
     DesignUrlHandlers = dict:from_list(DesignUrlHandlersList),
+
+    Opaque = dict:from_list(OpaqueList),
+    
     Loop = fun(Req)->
         apply(?MODULE, handle_request, [
-            Req, DefaultFun, UrlHandlers, DbUrlHandlers, DesignUrlHandlers
+            Req, DefaultFun, UrlHandlers, DbUrlHandlers, DesignUrlHandlers,
+            Opaque
         ])
     end,
 
@@ -157,14 +166,14 @@ stop() ->
 
 
 handle_request(MochiReq, DefaultFun, UrlHandlers, DbUrlHandlers, 
-    DesignUrlHandlers) ->
+    DesignUrlHandlers, Opaque) ->
 
     MochiReq1 = couch_httpd_vhost:match_vhost(MochiReq),
     handle_request_int(MochiReq1, DefaultFun,
-                UrlHandlers, DbUrlHandlers, DesignUrlHandlers).
+                UrlHandlers, DbUrlHandlers, DesignUrlHandlers, Opaque).
 
 handle_request_int(MochiReq, DefaultFun,
-            UrlHandlers, DbUrlHandlers, DesignUrlHandlers) ->
+            UrlHandlers, DbUrlHandlers, DesignUrlHandlers, Opaque) ->
     Begin = now(),
     AuthenticationSrcs = make_fun_spec_strs(
             couch_config:get("httpd", "authentication_handlers")),
@@ -240,7 +249,8 @@ handle_request_int(MochiReq, DefaultFun,
         db_url_handlers = DbUrlHandlers,
         design_url_handlers = DesignUrlHandlers,
         default_fun = DefaultFun,
-        url_handlers = UrlHandlers
+        url_handlers = UrlHandlers,
+        opaque = Opaque
     },
 
     HandlerFun = couch_util:dict_find(HandlerKey, UrlHandlers, DefaultFun),
@@ -968,4 +978,8 @@ partial_find(B, D, N, K) ->
             partial_find(B, D, 1 + N, K - 1)
     end.
 
+to_bool("true") ->
+    true;
+to_bool(_Else) ->
+    false.
 
