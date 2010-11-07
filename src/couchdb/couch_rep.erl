@@ -40,6 +40,7 @@
 
     start_seq,
     history,
+    session_id,
     source_log,
     target_log,
     rep_starttime,
@@ -206,6 +207,7 @@ do_init([RepId, {PostProps} = RepDoc, UserCtx] = InitArgs) ->
 
         start_seq = StartSeq,
         history = History,
+        session_id = couch_uuids:random(),
         source_log = SourceLog,
         target_log = TargetLog,
         rep_starttime = httpd_util:rfc1123_date(),
@@ -608,7 +610,10 @@ open_db({Props}, _UserCtx, ProxyParams, CreateTarget) ->
         auth = AuthProps,
         headers = lists:ukeymerge(1, Headers, DefaultHeaders)
     },
-    Db = Db1#http_db{options = Db1#http_db.options ++ ProxyParams},
+    Db = Db1#http_db{
+        options = Db1#http_db.options ++ ProxyParams ++
+            couch_rep_httpc:ssl_options(Db1)
+    },
     couch_rep_httpc:db_exists(Db, CreateTarget);
 open_db(<<"http://",_/binary>>=Url, _, ProxyParams, CreateTarget) ->
     open_db({[{<<"url">>,Url}]}, [], ProxyParams, CreateTarget);
@@ -648,6 +653,7 @@ do_checkpoint(State) ->
         committed_seq = NewSeqNum,
         start_seq = StartSeqNum,
         history = OldHistory,
+        session_id = SessionId,
         source_log = SourceLog,
         target_log = TargetLog,
         rep_starttime = ReplicationStartTime,
@@ -659,7 +665,6 @@ do_checkpoint(State) ->
     {SrcInstanceStartTime, TgtInstanceStartTime} ->
         ?LOG_INFO("recording a checkpoint for ~s -> ~s at source update_seq ~p",
             [dbname(Source), dbname(Target), NewSeqNum]),
-        SessionId = couch_uuids:random(),
         NewHistoryEntry = {[
             {<<"session_id">>, SessionId},
             {<<"start_time">>, list_to_binary(ReplicationStartTime)},
@@ -734,10 +739,15 @@ commit_to_both(Source, Target, RequiredSeq) ->
     {SourceStartTime, TargetStartTime}.
     
 ensure_full_commit(#http_db{headers = Headers} = Target) ->
+    Headers1 = [
+        {"Content-Length", 0} |
+        couch_util:proplist_apply_field(
+            {"Content-Type", "application/json"}, Headers)
+    ],
     Req = Target#http_db{
         resource = "_ensure_full_commit",
         method = post,
-        headers = couch_util:proplist_apply_field({"Content-Type", "application/json"}, Headers)
+        headers = Headers1
     },
     {ResultProps} = couch_rep_httpc:request(Req),
     true = couch_util:get_value(<<"ok">>, ResultProps),
@@ -759,11 +769,16 @@ ensure_full_commit(Target) ->
     end.
 
 ensure_full_commit(#http_db{headers = Headers} = Source, RequiredSeq) ->
+    Headers1 = [
+        {"Content-Length", 0} |
+        couch_util:proplist_apply_field(
+            {"Content-Type", "application/json"}, Headers)
+    ],
     Req = Source#http_db{
         resource = "_ensure_full_commit",
         method = post,
         qs = [{seq, RequiredSeq}],
-        headers = couch_util:proplist_apply_field({"Content-Type", "application/json"}, Headers)
+        headers = Headers1
     },
     {ResultProps} = couch_rep_httpc:request(Req),
     case couch_util:get_value(<<"ok">>, ResultProps) of
