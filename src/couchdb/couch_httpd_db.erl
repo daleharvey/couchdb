@@ -211,8 +211,16 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
         throw(Error)
     end.
 
-do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
-    case couch_db:open(DbName, [{user_ctx, UserCtx}]) of
+do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|RestParts]}=Req, Fun) ->
+
+    Anon = couch_config:get("couch_httpd_auth", "anonymous_design_doc", false)
+        =:= "true",
+
+    OpenDbFun = case Anon andalso is_ddoc_attachment(RestParts) of
+                    true  -> fun couch_db:open_int/2;
+                    false -> fun couch_db:open/2
+                end,
+    case OpenDbFun(DbName, [{user_ctx, UserCtx}]) of 
     {ok, Db} ->
         try
             Fun(Req, Db)
@@ -222,6 +230,13 @@ do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|_]}=Req, Fun) ->
     Error ->
         throw(Error)
     end.
+
+is_ddoc_attachment([<<"_design">>, _Name, <<"_", _/binary>> | _]) ->
+    false;
+is_ddoc_attachment([<<"_design">> | Parts]) when length(Parts) >= 2 ->
+    true;
+is_ddoc_attachment(_) ->
+    false.
 
 db_req(#httpd{method='GET',path_parts=[_DbName]}=Req, Db) ->
     {ok, DbInfo} = couch_db:get_db_info(Db),
