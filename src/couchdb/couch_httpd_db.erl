@@ -200,11 +200,11 @@ do_db_req(#httpd{user_ctx=UserCtx,path_parts=[DbName|RestParts]}=Req, Fun) ->
     Anon = couch_config:get("couch_httpd_auth", "anonymous_design_doc", false),
     
     OpenDbFun = case {Anon, RestParts, Req#httpd.method} of
-      {"true", [ <<"_design">>, _DdocName, <<C:8, _/binary>> | _ ], 'GET'}
+    {"true", [ <<"_design">>, _DdocName, <<C:8, _/binary>> | _ ], 'GET'}
         when C =/= $_ ->
-          fun couch_db:open_int/2;
-      _ ->
-          fun couch_db:open/2
+            fun couch_db:open_int/2;
+        _ ->
+            fun couch_db:open/2
     end,
 
     case OpenDbFun(DbName, [{user_ctx, UserCtx}]) of 
