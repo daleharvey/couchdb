@@ -40,8 +40,8 @@ couchTests.attachment_permissions = function(debug) {
   var runTest = function () { 
     try { 
 
-      var testDb = createDb(dbName);
-      var usersDb = createDb(usersDbName);
+      var testDb = createDb(dbName),
+          usersDb = createDb(usersDbName);
 
       if (debug) debugger;
     
@@ -51,7 +51,7 @@ couchTests.attachment_permissions = function(debug) {
       T(testDb.setSecObj(securityObj).ok);
       T(CouchDB.login(name, pass).ok);
 
-      var rootDb = "/" + dbName;
+      var rootDb = "/" + dbName,
           dDoc   = rootDb + "/_design/" + dbName,
           attach = dDoc + "/foo.txt", 
           view   = dDoc + "/_view/test",
@@ -65,6 +65,11 @@ couchTests.attachment_permissions = function(debug) {
       T(CouchDB.request("GET", show).status === 401);
       T(CouchDB.request("GET", view).status === 401);
 
+      T(CouchDB.request("PUT", dDoc + "/testattachment.txt", {
+        headers:{"Content-Type":"text/plain;charset=utf-8"},
+        body:"Just some text"
+      }).status === 401);
+      
     } finally { 
       CouchDB.logout();
     }
