@@ -27,9 +27,10 @@
 -export([get_value/2, get_value/3]).
 -export([md5/1, md5_init/0, md5_update/2, md5_final/1]).
 -export([reorder_results/2]).
+-export([url_strip_password/1]).
+-export([encode_doc_id/1]).
 
 -include("couch_db.hrl").
--include_lib("kernel/include/file.hrl").
 
 % arbitrarily chosen amount of memory to use before flushing to disk
 -define(FLUSH_MAX_MEM, 10000000).
@@ -400,14 +401,8 @@ compressible_att_type(MimeType) ->
     ),
     lists:any(
         fun(TypeExp) ->
-            Regexp = "^\\s*" ++
-                re:replace(TypeExp, "\\*", ".*", [{return, list}]) ++ "\\s*$",
-            case re:run(MimeType, Regexp, [caseless]) of
-            {match, _} ->
-                true;
-            _ ->
-                false
-            end
+            Regexp = ["^\\s*", re:replace(TypeExp, "\\*", ".*"), "\\s*$"],
+            re:run(MimeType, Regexp, [caseless]) =/= nomatch
         end,
         [T || T <- TypeExpList, T /= []]
     ).
@@ -435,3 +430,20 @@ reorder_results(Keys, SortedResults) when length(Keys) < 100 ->
 reorder_results(Keys, SortedResults) ->
     KeyDict = dict:from_list(SortedResults),
     [dict:fetch(Key, KeyDict) || Key <- Keys].
+
+url_strip_password(Url) ->
+    re:replace(Url,
+        "http(s)?://([^:]+):[^@]+@(.*)$",
+        "http\\1://\\2:*****@\\3",
+        [{return, list}]).
+
+encode_doc_id(#doc{id = Id}) ->
+    encode_doc_id(Id);
+encode_doc_id(Id) when is_list(Id) ->
+    encode_doc_id(?l2b(Id));
+encode_doc_id(<<"_design/", Rest/binary>>) ->
+    "_design/" ++ url_encode(Rest);
+encode_doc_id(<<"_local/", Rest/binary>>) ->
+    "_local/" ++ url_encode(Rest);
+encode_doc_id(Id) ->
+    url_encode(Id).

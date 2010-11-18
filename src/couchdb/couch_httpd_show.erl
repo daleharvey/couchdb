@@ -148,12 +148,14 @@ send_doc_update_response(Req, Db, DDoc, UpdateName, Doc, DocId) ->
 % view-list request with view and list from same design doc.
 handle_view_list_req(#httpd{method='GET',
         path_parts=[_, _, DesignName, _, ListName, ViewName]}=Req, Db, DDoc) ->
-    handle_view_list(Req, Db, DDoc, ListName, {DesignName, ViewName}, nil);
+    Keys = couch_httpd:qs_json_value(Req, "keys", nil),
+    handle_view_list(Req, Db, DDoc, ListName, {DesignName, ViewName}, Keys);
 
 % view-list request with view and list from different design docs.
 handle_view_list_req(#httpd{method='GET',
         path_parts=[_, _, _, _, ListName, ViewDesignName, ViewName]}=Req, Db, DDoc) ->
-    handle_view_list(Req, Db, DDoc, ListName, {ViewDesignName, ViewName}, nil);
+    Keys = couch_httpd:qs_json_value(Req, "keys", nil),
+    handle_view_list(Req, Db, DDoc, ListName, {ViewDesignName, ViewName}, Keys);
 
 handle_view_list_req(#httpd{method='GET'}=Req, _Db, _DDoc) ->
     send_error(Req, 404, <<"list_error">>, <<"Invalid path.">>);
@@ -183,14 +185,14 @@ handle_view_list_req(Req, _Db, _DDoc) ->
 handle_view_list(Req, Db, DDoc, LName, {ViewDesignName, ViewName}, Keys) ->
     ViewDesignId = <<"_design/", ViewDesignName/binary>>,
     {ViewType, View, Group, QueryArgs} = couch_httpd_view:load_view(Req, Db, {ViewDesignId, ViewName}, Keys),
-    Etag = list_etag(Req, Db, Group, {couch_httpd:doc_etag(DDoc), Keys}),
+    Etag = list_etag(Req, Db, Group, View, {couch_httpd:doc_etag(DDoc), Keys}),
     couch_httpd:etag_respond(Req, Etag, fun() ->
             output_list(ViewType, Req, Db, DDoc, LName, View, QueryArgs, Etag, Keys, Group)
         end).
 
-list_etag(#httpd{user_ctx=UserCtx}=Req, Db, Group, More) ->
+list_etag(#httpd{user_ctx=UserCtx}=Req, Db, Group, View, More) ->
     Accept = couch_httpd:header_value(Req, "Accept"),
-    couch_httpd_view:view_group_etag(Group, Db, {More, Accept, UserCtx#user_ctx.roles}).
+    couch_httpd_view:view_etag(Db, Group, View, {More, Accept, UserCtx#user_ctx.roles}).
 
 output_list(map, Req, Db, DDoc, LName, View, QueryArgs, Etag, Keys, Group) ->
     output_map_list(Req, Db, DDoc, LName, View, QueryArgs, Etag, Keys, Group);

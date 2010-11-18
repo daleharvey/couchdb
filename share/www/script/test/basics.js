@@ -44,7 +44,7 @@ couchTests.basics = function(debug) {
 
   // Get the database info, check the db_name
   T(db.info().db_name == "test_suite_db");
-  T(CouchDB.allDbs().indexOf("test_suite_db") != -1)
+  T(CouchDB.allDbs().indexOf("test_suite_db") != -1);
 
   // Get the database info, check the doc_count
   T(db.info().doc_count == 0);
@@ -159,8 +159,8 @@ couchTests.basics = function(debug) {
   var loc = xhr.getResponseHeader("Location");
   T(loc, "should have a Location header");
   var locs = loc.split('/');
-  T(locs[4] == resp.id);
-  T(locs[3] == "test_suite_db");
+  T(locs[locs.length-1] == resp.id);
+  T(locs[locs.length-2] == "test_suite_db");
 
   // test that that POST's with an _id aren't overriden with a UUID.
   var xhr = CouchDB.request("POST", "/test_suite_db", {
@@ -194,7 +194,7 @@ couchTests.basics = function(debug) {
     ["zebrafish", {"_zoom": "hello"}],
     ["mudfish", {"zane": "goldfish", "_fan": "something smells delicious"}],
     ["tastyfish", {"_bing": {"wha?": "soda can"}}]
-  ]
+  ];
   var test_doc = function(info) {
   var data = JSON.stringify(info[1]);
     xhr = CouchDB.request("PUT", "/test_suite_db/" + info[0], {body: data});

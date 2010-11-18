@@ -55,7 +55,15 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
         do_db_req(Req, Handler)
     end.
 
+handle_changes_req(#httpd{method='POST'}=Req, Db) ->
+    couch_httpd:validate_ctype(Req, "application/json"),
+    handle_changes_req1(Req, Db);
 handle_changes_req(#httpd{method='GET'}=Req, Db) ->
+    handle_changes_req1(Req, Db);
+handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
+    send_method_not_allowed(Req, "GET,HEAD,POST").
+
+handle_changes_req1(Req, Db) ->
     MakeCallback = fun(Resp) ->
         fun({change, Change, _}, "continuous") ->
             send_chunk(Resp, [?JSON_ENCODE(Change) | "\n"]);
@@ -109,10 +117,8 @@ handle_changes_req(#httpd{method='GET'}=Req, Db) ->
     couch_stats_collector:track_process_count(
         {httpd, clients_requesting_changes}
     ),
-    WrapperFun(ChangesFun);
+    WrapperFun(ChangesFun).
 
-handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
-    send_method_not_allowed(Req, "GET,HEAD").
 
 handle_compact_req(#httpd{method='POST',path_parts=[DbName,_,Id|_]}=Req, Db) ->
     ok = couch_db:check_is_admin(Db),
@@ -353,9 +359,11 @@ db_req(#httpd{path_parts=[_,<<"_purge">>]}=Req, _Db) ->
     send_method_not_allowed(Req, "POST");
 
 db_req(#httpd{method='GET',path_parts=[_,<<"_all_docs">>]}=Req, Db) ->
-    all_docs_view(Req, Db, nil);
+    Keys = couch_httpd:qs_json_value(Req, "keys", nil),
+    all_docs_view(Req, Db, Keys);
 
 db_req(#httpd{method='POST',path_parts=[_,<<"_all_docs">>]}=Req, Db) ->
+    couch_httpd:validate_ctype(Req, "application/json"),
     {Fields} = couch_httpd:json_body_obj(Req),
     case couch_util:get_value(<<"keys">>, Fields, nil) of
     nil ->
@@ -556,29 +564,26 @@ db_doc_req(#httpd{method='DELETE'}=Req, Db, DocId) ->
                     {[{<<"_rev">>, ?l2b(Rev)},{<<"_deleted">>,true}]}))
     end;
 
-db_doc_req(#httpd{method='GET'}=Req, Db, DocId) ->
+db_doc_req(#httpd{method = 'GET', mochi_req = MochiReq} = Req, Db, DocId) ->
     #doc_query_args{
         rev = Rev,
         open_revs = Revs,
-        options = Options,
+        options = Options1,
         atts_since = AttsSince
     } = parse_doc_query(Req),
+    Options = case AttsSince of
+    nil ->
+        Options1;
+    RevList when is_list(RevList) ->
+        [{atts_since, RevList}, attachments | Options1]
+    end,
     case Revs of
     [] ->
-        Options2 =
-        if AttsSince /= nil ->
-            [{atts_since, AttsSince}, attachments | Options];
-        true -> Options
-        end,
-        Doc = couch_doc_open(Db, DocId, Rev, Options2),
-        send_doc(Req, Doc, Options2);
+        Doc = couch_doc_open(Db, DocId, Rev, Options),
+        send_doc(Req, Doc, Options);
     _ ->
         {ok, Results} = couch_db:open_doc_revs(Db, DocId, Revs, Options),
-        AcceptedTypes = case couch_httpd:header_value(Req, "Accept") of
-            undefined       -> [];
-            AcceptHeader    -> string:tokens(AcceptHeader, "; ")
-        end,
-        case lists:member("multipart/mixed", AcceptedTypes) of
+        case MochiReq:accepts_content_type("multipart/mixed") of
         false ->
             {ok, Resp} = start_json_response(Req, 200),
             send_chunk(Resp, "["),
@@ -720,14 +725,11 @@ send_doc(Req, Doc, Options) ->
 
 send_doc_efficiently(Req, #doc{atts=[]}=Doc, Headers, Options) ->
         send_json(Req, 200, Headers, couch_doc:to_json_obj(Doc, Options));
-send_doc_efficiently(Req, #doc{atts=Atts}=Doc, Headers, Options) ->
+send_doc_efficiently(#httpd{mochi_req = MochiReq} = Req,
+    #doc{atts = Atts} = Doc, Headers, Options) ->
     case lists:member(attachments, Options) of
     true ->
-        AcceptedTypes = case couch_httpd:header_value(Req, "Accept") of
-            undefined       -> [];
-            AcceptHeader    -> string:tokens(AcceptHeader, ", ")
-        end,
-        case lists:member("multipart/related", AcceptedTypes) of
+        case MochiReq:accepts_content_type("multipart/related") of
         false ->
             send_json(Req, 200, Headers, couch_doc:to_json_obj(Doc, Options));
         true ->
@@ -1086,14 +1088,14 @@ db_attachment_req(Req, _Db, _DocId, _FileNameParts) ->
 
 parse_ranges(undefined, _Len) ->
     undefined;
-parse_ranges(fail, Len) ->
+parse_ranges(fail, _Len) ->
     undefined;
 parse_ranges(Ranges, Len) ->
     parse_ranges(Ranges, Len, []).
 
 parse_ranges([], _Len, Acc) ->
     lists:reverse(Acc);
-parse_ranges([{From, To}|_], Len, _Acc) when is_integer(From) andalso is_integer(To) andalso To < From ->
+parse_ranges([{From, To}|_], _Len, _Acc) when is_integer(From) andalso is_integer(To) andalso To < From ->
     throw(requested_range_not_satisfiable);
 parse_ranges([{From, To}|Rest], Len, Acc) when is_integer(To) andalso To >= Len ->
     parse_ranges([{From, Len-1}] ++ Rest, Len, Acc);
@@ -1216,15 +1218,19 @@ extract_header_rev(Req, ExplicitRev) ->
 
 
 parse_copy_destination_header(Req) ->
-    Destination = couch_httpd:header_value(Req, "Destination"),
-    case re:run(Destination, "\\?", [{capture, none}]) of
-    nomatch ->
-        {list_to_binary(Destination), {0, []}};
-    match ->
-        [DocId, RevQs] = re:split(Destination, "\\?", [{return, list}]),
-        [_RevQueryKey, Rev] = re:split(RevQs, "=", [{return, list}]),
-        {Pos, RevId} = couch_doc:parse_rev(Rev),
-        {list_to_binary(DocId), {Pos, [RevId]}}
+    case couch_httpd:header_value(Req, "Destination") of
+        undefined ->
+            throw({bad_request, "Destination header in mandatory for COPY."});
+        Destination ->
+            case re:run(Destination, "\\?", [{capture, none}]) of
+                nomatch ->
+                    {list_to_binary(Destination), {0, []}};
+                match ->
+                    [DocId, RevQs] = re:split(Destination, "\\?", [{return, list}]),
+                    [_RevQueryKey, Rev] = re:split(RevQs, "=", [{return, list}]),
+                    {Pos, RevId} = couch_doc:parse_rev(Rev),
+                    {list_to_binary(DocId), {Pos, [RevId]}}
+            end
     end.
 
 validate_attachment_names(Doc) ->

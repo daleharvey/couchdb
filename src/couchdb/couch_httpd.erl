@@ -15,14 +15,15 @@
 
 -export([start_link/0, start_link/1, stop/0, handle_request/5]).
 
--export([header_value/2,header_value/3,qs_value/2,qs_value/3,qs/1,path/1,absolute_uri/2,body_length/1]).
+-export([header_value/2,header_value/3,qs_value/2,qs_value/3,qs/1,qs_json_value/3]).
+-export([path/1,absolute_uri/2,body_length/1]).
 -export([verify_is_server_admin/1,unquote/1,quote/1,recv/2,recv_chunked/4,error_info/1]).
 -export([make_fun_spec_strs/1]).
 -export([make_arity_1_fun/1, make_arity_2_fun/1, make_arity_3_fun/1]).
 -export([parse_form/1,json_body/1,json_body_obj/1,body/1,doc_etag/1, make_etag/1, etag_respond/3]).
 -export([primary_header_value/2,partition/1,serve_file/3,serve_file/4, server_header/0]).
 -export([start_chunked_response/3,send_chunk/2,log_request/2]).
--export([start_response_length/4, send/2]).
+-export([start_response_length/4, start_response/3, send/2]).
 -export([start_json_response/2, start_json_response/3, end_json_response/1]).
 -export([send_response/4,send_method_not_allowed/2,send_error/4, send_redirect/2,send_chunked_error/2]).
 -export([send_json/2,send_json/3,send_json/4,last_chunk/1,parse_multipart_request/3]).
@@ -188,10 +189,11 @@ handle_request_int(MochiReq, DefaultFun,
     {FirstPart, _, _} ->
         list_to_binary(FirstPart)
     end,
-    ?LOG_DEBUG("~p ~s ~p~nHeaders: ~p", [
+    ?LOG_DEBUG("~p ~s ~p from ~p~nHeaders: ~p", [
         MochiReq:get(method),
         RawUri,
         MochiReq:get(version),
+        MochiReq:get(peer),
         mochiweb_headers:to_list(MochiReq:get(headers))
     ]),
     
@@ -383,6 +385,14 @@ qs_value(Req, Key) ->
 qs_value(Req, Key, Default) ->
     couch_util:get_value(Key, qs(Req), Default).
 
+qs_json_value(Req, Key, Default) ->
+    case qs_value(Req, Key, Default) of
+    Default ->
+        Default;
+    Result ->
+        ?JSON_DECODE(Result)
+    end.
+
 qs(#httpd{mochi_req=MochiReq}) ->
     MochiReq:parse_qs().
 
@@ -522,6 +532,18 @@ start_response_length(#httpd{mochi_req=MochiReq}=Req, Code, Headers, Length) ->
     case MochiReq:get(method) of
     'HEAD' -> throw({http_head_abort, Resp});
     _ -> ok
+    end,
+    {ok, Resp}.
+
+start_response(#httpd{mochi_req=MochiReq}=Req, Code, Headers) ->
+    log_request(Req, Code),
+    couch_stats_collector:increment({httpd_status_cdes, Code}),
+    CookieHeader = couch_httpd_auth:cookie_auth_header(Req, Headers),
+    Headers2 = Headers ++ server_header() ++ CookieHeader,
+    Resp = MochiReq:start_response({Code, Headers2}),
+    case MochiReq:get(method) of
+        'HEAD' -> throw({http_head_abort, Resp});
+        _ -> ok
     end,
     {ok, Resp}.
 
