@@ -12,7 +12,7 @@
 
 // A simple class to represent a database. Uses XMLHttpRequest to interface with
 // the CouchDB server.
-  
+
 var app = {};
 window.app = app;
 
@@ -75,7 +75,7 @@ var param = function( a ) {
 	if ( jQuery.isArray(a) || a.jquery ) {
 		jQuery.each( a, function() {
 			add( this.name, this.value );
-		});		
+		});
 	} else {
 		for ( var prefix in a ) {
 			buildParams( prefix, a[prefix] );
@@ -91,11 +91,11 @@ var param = function( a ) {
 				} else {
 					buildParams( prefix + "[" + ( typeof v === "object" || jQuery.isArray(v) ? i : "" ) + "]", v );
 				}
-			});				
+			});
 		} else if (  obj != null && typeof obj === "object" ) {
 			jQuery.each( obj, function( k, v ) {
 				buildParams( prefix + "[" + k + "]", v );
-			});				
+			});
 		} else {
 			add( prefix, obj );
 		}
@@ -132,14 +132,14 @@ var handleError = function (err, resp) {
   var e = $('<div class="error-bubble"></div>')
   if (err.status) e.append('<span class="error-code">'+err.status+'</span>')
   else if (err.status === 0) e.append('<span class="error-code">Lost Connection</span>')
-  
+
   e.append('<span class="error-title">'+resp.error || err.statusText || resp +'</span>')
   if (e.find('span.error-title').text() == "undefined") e.find('span.error-title').text('')
   if (resp.error) e.append('<br>').append('<span class="error-text">'+resp.reason+'</span>')
-  
+
   // Because of futon's crazy scroll constraints we can't leave the error
   // container in the default html and have to append it to content when it's not there
-  
+
   if (!$('div#error-container').length) {
     $('div#content').prepend('<div id="error-container"></div>')
   }
@@ -156,7 +156,7 @@ var handleError = function (err, resp) {
   throw {err:err, resp:resp, e:e}
 }
 
-$.expr[":"].exactly = function(obj, index, meta, stack){ 
+$.expr[":"].exactly = function(obj, index, meta, stack){
   return ($(obj).text() == meta[3])
 }
 
@@ -211,7 +211,7 @@ app.showConfig = function () {
   this.title('Configuration');
   $('span#topbar').html('<strong>Configuration</strong>');
   this.render('templates/config.mustache').replace('#content').then(function () {
-    
+
   })
 }
 
@@ -219,7 +219,7 @@ app.showStats = function () {
   this.title('Status');
   $('span#topbar').html('<strong>Status</strong>');
   this.render('templates/stats.mustache').replace('#content').then(function () {
-    
+
   })
 }
 
@@ -227,14 +227,14 @@ app.showTests = function () {
   this.title('Test Suite');
   $('span#topbar').html('<strong>Test Suite</strong>');
   this.render('templates/tests.mustache').replace('#content').then(function () {
-    
+
   })
 }
 app.showReplicator = function () {
   this.title('Replicator');
   $('span#topbar').html('<strong>Replicator</strong>');
   this.render('templates/replicator.mustache').replace('#content').then(function () {
-    
+
   })
 }
 var ddoc_;
@@ -276,24 +276,24 @@ app.showView = function () {
         else query[name] = 'true'
       }
     })
-    
+
     window.location.hash = h + '?' + param(query);
   }
-  
+
   var setupViews = function () {
-    
+
     var updateResults = function () {
       var c = $('tbody.content')
         , url = window.location.hash.replace('#','')
         ;
-        
+
       c.html('');
       request({url:url}, function (err, resp) {
         $('td#viewfoot').html('')
         if (!resp) {
           err = JSON.parse(err.responseText);
           $('td#viewfoot').append($(
-            '<div class="error-type">Error : ' + err.error + '</div>' + 
+            '<div class="error-type">Error : ' + err.error + '</div>' +
             '<div class="error-reason">Reason : '+ err.reason + '</div>'
           ))
         } else {
@@ -304,21 +304,21 @@ app.showView = function () {
           }
           var odd = 'even';
           resp.rows.forEach(function (row) {
-            var tr = $('<tr class="' + odd + '">' + 
-                         '<td class="key">' + 
-                           '<div class="viewkey">' + 
+            var tr = $('<tr class="' + odd + '">' +
+                         '<td class="key">' +
+                           '<div class="viewkey">' +
                              '<span><strong>'+JSON.stringify(row.key)+'</strong></span>' +
                              '<span class="viewkey">^</span>' +
-                             '<span class="viewend">\></span>' + 
-                             '<span class="viewstart">\<</span>' + 
-                           '</div>' + 
-                           '<div class="docid">' + 
-                             '<span class="docid">ID: ' + row.id + '</span>' + 
-                             '<span class="viewend">\></span>' + 
+                             '<span class="viewend">\></span>' +
+                             '<span class="viewstart">\<</span>' +
+                           '</div>' +
+                           '<div class="docid">' +
+                             '<span class="docid">ID: ' + row.id + '</span>' +
+                             '<span class="viewend">\></span>' +
                              '<span class="viewstart">\<</span>' +
                            '</div>' +
                          '</td>' +
-                         '<td class="value"><code>' + $.formatJSON(row.value) + '</code></td>' + 
+                         '<td class="value"><code>' + $.formatJSON(row.value) + '</code></td>' +
                        '</tr>')
             if (row.doc) {
               var expand = function () {
@@ -334,7 +334,7 @@ app.showView = function () {
                 $(this).click(collapse)
                 d.insertAfter(tr)
               }
-              
+
               $('<td>' + '<span class="expand-doc">⟱</span>' + '</td>')
                 .click(expand)
                 .appendTo(tr)
@@ -344,7 +344,7 @@ app.showView = function () {
             else odd = 'odd'
             c.append(tr)
           })
-          
+
           // Add quick links for setting key, startkey, endkey, startkey_docid & endkey_docid
           $("span.viewstart").click(function () {
             var c = $(this).parent();
@@ -366,20 +366,20 @@ app.showView = function () {
             var c = $(this).parent();
             $("input[name='key']").val(c.text().slice(0, c.text().length - 3)).change();
           })
-          
+
           // Add view result info
           $('td#viewfoot').append(
-            '<div class="viewinfo" >total_rows<span class="viewinfo-val">' + 
+            '<div class="viewinfo" >total_rows<span class="viewinfo-val">' +
               resp.total_rows + '</span></div>'+
-            '<div class="viewinfo" >offset<span class="viewinfo-val">' + 
+            '<div class="viewinfo" >offset<span class="viewinfo-val">' +
               resp.offset + '</span></div>' +
-            '<div class="viewinfo" >rows<span class="viewinfo-val">' + 
+            '<div class="viewinfo" >rows<span class="viewinfo-val">' +
               resp.rows.length + '</span></div>'
           )
         }
       })
     }
-    
+
     var release = function () {
       // Clear all fields
       $("input.qinput[type='text']").val('');
@@ -390,35 +390,35 @@ app.showView = function () {
         var n = $('input[name='+i+']')
           , type = n.attr("type")
           ;
-        if (type == "text") n.val(query[i])          
+        if (type == "text") n.val(query[i])
         else if (type == 'checkbox' && (query[i] == 'true' || query[i] == 'ok')) n.attr('checked', 'true')
       }
-      
+
       if (!$('input.quinput[name=limit]').attr('released')) {
         $('*.qinput').css('color', '#1A1A1A');
         $('*.qinput').attr('disabled', false);
-        
+
         if (!ddoc_.views[view] && !ddoc_.views[view].reduce) {
           $('input.reduce').attr('disabled', true)
           $('span.reduce').css('color', '#A1A1A1');
         }
-        
+
         $("input.qinput[type='checkbox']").click(refresh);
         $("input[type='text']").change(refresh);
         $("input.qinput[name='limit']").attr('released', true)
       }
-      
+
       // refresh();
       updateResults();
     }
-    
+
     if (!$("div.view-ddoc").length) {
       // No views in the list, populat
-      request({url: '/' + encodeURIComponent(db) + 
-                    '/_all_docs?startkey="_design/"&endkey="_design0"&include_docs=true'}, 
+      request({url: '/' + encodeURIComponent(db) +
+                    '/_all_docs?startkey="_design/"&endkey="_design0"&include_docs=true'},
                     function (err, docs) {
         if (err) handleError(err, docs);
-        $("div#view-selection").attr('loaded', true); 
+        $("div#view-selection").attr('loaded', true);
         var s = $('div#ddoc-selection');
         var getAddView = function () {
           var addView = $('<div class="ddoc-view-select"><span class="add-view">new</span></div>')
@@ -439,9 +439,9 @@ app.showView = function () {
             ;
             self.hide();
           })
-          return addView;  
+          return addView;
         }
-        
+
         docs.rows.forEach(function (row) {
           var populate = function () {
             var v = $("div#ddoc-view-selection");
@@ -467,9 +467,9 @@ app.showView = function () {
             ddoc_ = row.doc;
             if (view) {
               release();
-            }             
+            }
           }
-          
+
           $('<div class="view-ddoc">'+row.id+'</div>')
           .click(function () {
             populate();
@@ -484,7 +484,7 @@ app.showView = function () {
           .appendTo(s)
           if ('_design/'+ddoc == row.id) {
             populate();
-          } 
+          }
         })
         $('<div class="view-ddoc"><span class="add-ddoc">new</span></div>')
         .click(function () {
@@ -493,7 +493,7 @@ app.showView = function () {
           .change(function () {
             var id = $(this).val();
             if (id.slice(0, '_design/'.length) !== '_design/') id = '_design/'+id
-            
+
             $(this).parent().append('<div class="view-ddoc">'+id+'</div>')
             $(this).remove();
             ddoc = id.replace('_design/', '')
@@ -533,11 +533,11 @@ app.showView = function () {
         })
       })
       ;
-      
+
     } else if (view) {release()}
-    
+
   }
-  
+
   $('span#topbar').html('<a href="#/">Overview</a><a href="#/'+encodeURIComponent(db)+'/_all_docs">'+db+'</a><strong>_view</strong>');
   if ($('div#query-options').length === 0) {
     this.render('templates/view.mustache').replace('#content').then(setupViews);
@@ -564,7 +564,7 @@ app.showDatabase = function (context) {
     $("#topbar button.down").click(function () {
       $('#all-dbs').slideToggle();
     });
-    $("#toolbar button.add").click( function () { 
+    $("#toolbar button.add").click( function () {
       $("div#content").html('');
       request({url:'/_uuids'}, function (err, resp) {
         if (err) handleError(err, resp);
@@ -572,22 +572,22 @@ app.showDatabase = function (context) {
       })
       // location.hash = "#/" + db + '/_new';
     });
-    $("#toolbar button.compact").click(function () { 
+    $("#toolbar button.compact").click(function () {
       $.futonDialogs.compactAndCleanup(db)
     });
-    
+
     $("#toolbar button.delete").click(function (){$.futonDialogs.deleteDatabase(db)});
     // $("#toolbar button.security").click(page.databaseSecurity); TODO : New security UI
-    
+
     // JumpToDoc
     $('input#jumptodoc').change(function () {
       window.location.hash = '#/' + db + '/' + $(this).val();
     })
-    
+
     var addquery = function () {
       // This function adds the _all_docs startkey/endkey query options
       $('select.dbquery-select').before(
-        '<div class="alldoc-query">' + 
+        '<div class="alldoc-query">' +
           '<span class="query-option">end<input class="query-option" id="end" type="text"></input></span>' +
           '<span class="query-option">start<input class="query-option" id="start" type="text"></input></span>' +
         '</div>'
@@ -596,7 +596,7 @@ app.showDatabase = function (context) {
         var startkey = $('input#start').val()
           , endkey = $('input#end').val()
           ;
-        // Check if the keys are properly json encoded as strings, if not do it 
+        // Check if the keys are properly json encoded as strings, if not do it
         if (startkey[0] !== '"' && startkey.length !== 0) startkey = '"'+startkey+'"'
         if (endkey[0] !== '"' && endkey.length !== 0) endkey = '"'+endkey+'"'
         // Craft query
@@ -615,7 +615,7 @@ app.showDatabase = function (context) {
       for (i in info) {$('#'+i).text(info[i])}
       var disk_size = info.disk_size;
       $('#disk_size').text(formatSize(info.disk_size))
-      
+
       // Query for ddocs to calculate size
       request({url:'/'+encodeURIComponent(db)+'/_all_docs?startkey="_design/"&endkey="_design0"'}, function (err, docs) {
         if (err) handleError(err, docs)
@@ -668,8 +668,8 @@ app.showDatabase = function (context) {
         $('input#end').val(query.endkey ? query.endkey : '');
       }
     }
-  } 
-  
+  }
+
   var rowCount = 0;
   var moreRows = function (start, limit) {
     // This function adds more rows to the current document table
@@ -692,7 +692,7 @@ app.showDatabase = function (context) {
         rowCount += 1;
      }
      if (!$('span.more').length && (resp.rows.length == limit) ) {
-       // The number of rows is less than the limit and we haven't added the pagination element yet 
+       // The number of rows is less than the limit and we haven't added the pagination element yet
        $('td.more').append('<div id="pagination"><span class="more">Load </span><input type="text" id="pages-input" value='+limit+'></input><span class="more"> More Items</span></div>');
      } else if ( resp.rows.length < limit ) {
        // If the return rows are less than the limit we can remove pagination
@@ -770,27 +770,27 @@ var futonApp = $.sammy(function () {
   // Index of all databases
   this.get('', app.showIndex);
   this.get("#/", app.showIndex);
-  
+
   this.get('#/_config', app.showConfig);
   this.get('#/_stats', app.showStats);
   this.get('#/_tests', app.showTests);
   this.get('#/_replicate', app.showReplicator)
-  
+
   this.get('#/:db/_views', app.showView); // TODO: see below...duplicate route?
   this.get('#/:db/_design/:ddoc/_view/', app.showView);
   this.get('#/:db/_design/:ddoc/_view/:view', app.showView);
-  
-  
+
+
   // Database view
   this.get('#/:db', app.showDatabase); // TODO: redirect to _all_docs
   this.get('#/:db/_all_docs', app.showDatabase);
   // Database _changes feed
   this.get('#/:db/_changes', app.showChanges);
-  
+
   // Database views viewer
   this.get('#/:db/_views', app.showViews); // TODO: not a real CouchDB URL...replace?
   // Document editor/viewer
   this.get('#/:db/:docid', app.showDocument);
-  
+
   this.get(/\#\/(.*)/, app.wildcard)
 });
