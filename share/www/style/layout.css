@@ -15,7 +15,7 @@ specific language governing permissions and limitations under the License.
 
 /* General styles */
 
-html, body { color: #000; font: normal 90% Verdana, sans-serif;
+html, body { color: #000; font: normal 90% arial, sans-serif;
   height: 100%; margin: 0; padding: 0; overflow: hidden;
 }
 
@@ -29,7 +29,7 @@ span.more { text-align: center; color: #ba1e16; cursor:pointer;}
 
 h1 { background: #333; border-right: 2px solid #111;
   border-bottom: 1px solid #333; color: #999;
-  font: normal 125% Verdana, sans-serif; height: 32px;
+  font: normal 125% arial, sans-serif; height: 32px;
   line-height: 2.2em; margin: 0; padding: 0 0 0 .5em; position: relative;
 }
 h1 :link, h1 :visited, h1 strong { padding: .4em .5em; }
@@ -475,7 +475,7 @@ div.info-value { display:inline; margin-right:30px; }
 #changes tbody.content td.key a { display: block; }
 #changes tbody.content td.key a strong { font-weight: normal; }
 #changes tbody.content td.key span.docid { color: #999;
-  font: normal 10px Verdana, sans-serif;
+  font: normal 10px arial, sans-serif;
 }
 #changes tbody.content td.value { font-size: 10px; }
 
@@ -496,7 +496,7 @@ div.info-value { display:inline; margin-right:30px; }
 #documents tbody.content td.key a { display: block; }
 #documents tbody.content td.key a strong { font-weight: normal; }
 #documents tbody.content td.key span.docid { color: #999;
-  font: normal 10px Verdana, sans-serif;
+  font: normal 10px arial, sans-serif;
 }
 #documents tbody.content td.value { font-size: 10px; }
 
@@ -853,11 +853,11 @@ div#document-editor div.add-button {
 }
 
 div#document-editor div.empty {
-  float:left;  
+  float:left;
 }
 
 div#document-editor input {
-  font: normal 90% Verdana, sans-serif;
+  font: normal 90% arial, sans-serif;
 }
 
 div#document-editor span#save-button {
@@ -946,7 +946,7 @@ input#create-db-input {
   margin-right:10px;
   padding-top:2px;
   padding-bottom:2px;
-  font:  normal Verdana, sans-serif;
+  font:  normal arial, sans-serif;
   font-size:16px;
 }
 span#add-db-button {
