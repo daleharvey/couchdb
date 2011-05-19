@@ -43,6 +43,10 @@ char* METHODS[] = {"GET", "HEAD", "POST", "PUT", "DELETE", "COPY", NULL};
 #define DELETE  4
 #define COPY    5
 
+#ifdef JSFUN_CONSTRUCTOR
+#define JSFUN_FAST_NATIVE 0
+#endif
+
 static JSBool
 go(JSContext* cx, JSObject* obj, HTTPData* http, char* body, size_t blen);
 
@@ -50,10 +54,21 @@ static JSString*
 str_from_binary(JSContext* cx, char* data, size_t length);
 
 static JSBool
+#ifdef JSFUN_CONSTRUCTOR
+constructor(JSContext* cx, uintN argc, jsval* vp)
+#else
 constructor(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
+#endif
 {
     HTTPData* http = NULL;
     JSBool ret = JS_FALSE;
+#ifdef JSFUN_CONSTRUCTOR
+    JSObject* obj = JS_NewObjectForConstructor(cx, vp);
+    if(!obj) {
+        JS_ReportError(cx, "Failed to create 'this' object");
+        goto error;
+    }
+#endif
 
     http = (HTTPData*) malloc(sizeof(HTTPData));
     if(!http)
@@ -80,6 +95,9 @@ error:
     if(http) free(http);
 
 success:
+#ifdef JSFUN_CONSTRUCTOR
+    JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(obj));
+#endif
     return ret;
 }
 
@@ -89,7 +107,8 @@ destructor(JSContext* cx, JSObject* obj)
     HTTPData* http = (HTTPData*) JS_GetPrivate(cx, obj);
     if(!http)
     {
-        fprintf(stderr, "Unable to destroy invalid CouchHTTP instance.\n");
+        // Comment out -- this messes up CouchDB and doesn't seem to be a big deal anyway
+        //fprintf(stderr, "Unable to destroy invalid CouchHTTP instance.\n");
     }
     else
     {
@@ -100,13 +119,20 @@ destructor(JSContext* cx, JSObject* obj)
 }
 
 static JSBool
-open(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
-{    
+open(JSContext* cx, uintN argc, jsval* vp)
+{
+    JSBool ret = JS_FALSE;
+    JSObject* obj = JS_THIS_OBJECT(cx, vp);
+    if(!obj) {
+        JS_ReportError(cx, "No 'this' object");
+        goto done;
+    }
+
     HTTPData* http = (HTTPData*) JS_GetPrivate(cx, obj);
     char* method = NULL;
     char* url = NULL;
-    JSBool ret = JS_FALSE;
     int methid;
+    jsval* argv = JS_ARGV(cx, vp);
 
     if(!http)
     {
@@ -174,6 +200,7 @@ open(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
     // Disable Expect: 100-continue
     http->req_headers = curl_slist_append(http->req_headers, "Expect:");
 
+    JS_SET_RVAL(cx, vp, JSVAL_VOID);
     ret = JS_TRUE;
 
 done:
@@ -182,14 +209,21 @@ done:
 }
 
 static JSBool
-setheader(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
-{    
+setheader(JSContext* cx, uintN argc, jsval* vp)
+{
+    JSBool ret = JS_FALSE;
+    JSObject* obj = JS_THIS_OBJECT(cx, vp);
+    if(!obj) {
+        JS_ReportError(cx, "No 'this' object");
+        goto done;
+    }
+
     HTTPData* http = (HTTPData*) JS_GetPrivate(cx, obj);
     char* keystr = NULL;
     char* valstr = NULL;
     char* hdrbuf = NULL;
     size_t hdrlen = -1;
-    JSBool ret = JS_FALSE;
+    jsval* argv = JS_ARGV(cx, vp);
 
     if(!http)
     {
@@ -234,6 +268,7 @@ setheader(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
     snprintf(hdrbuf, hdrlen, "%s: %s", keystr, valstr);
     http->req_headers = curl_slist_append(http->req_headers, hdrbuf);
 
+    JS_SET_RVAL(cx, vp, JSVAL_VOID);
     ret = JS_TRUE;
 
 done:
@@ -245,12 +280,19 @@ done:
 }
 
 static JSBool
-sendreq(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
+sendreq(JSContext* cx, uintN argc, jsval* vp)
 {
+    JSBool ret = JS_FALSE;
+    JSObject* obj = JS_THIS_OBJECT(cx, vp);
+    if(!obj) {
+        JS_ReportError(cx, "No 'this' object");
+        goto done;
+    }
+
     HTTPData* http = (HTTPData*) JS_GetPrivate(cx, obj);
     char* body = NULL;
     size_t bodylen = 0;
-    JSBool ret = JS_FALSE;
+    jsval* argv = JS_ARGV(cx, vp);
     
     if(!http)
     {
@@ -270,6 +312,9 @@ sendreq(JSContext* cx, JSObject* obj, uintN argc, jsval* argv, jsval* rval)
 
     ret = go(cx, obj, http, body, bodylen);
 
+    if (ret == JS_TRUE)
+        JS_SET_RVAL(cx, vp, JSVAL_VOID);
+
 done:
     if(body) free(body);
     return ret;
@@ -285,7 +330,12 @@ status(JSContext* cx, JSObject* obj, jsval idval, jsval* vp)
         JS_ReportError(cx, "Invalid CouchHTTP instance.");
         return JS_FALSE;
     }
-    
+#ifndef INT_FITS_IN_JSVAL
+    // jsval's are 64-bits wide in mozjs >= 2.0, so a jsint
+    // can use the full 32-bits now no bits are reserved for tagging
+    *vp = INT_TO_JSVAL(http->last_status);
+    return JS_TRUE;
+#else    
     if(INT_FITS_IN_JSVAL(http->last_status))
     {
         *vp = INT_TO_JSVAL(http->last_status);
@@ -296,6 +346,7 @@ status(JSContext* cx, JSObject* obj, jsval idval, jsval* vp)
         JS_ReportError(cx, "INTERNAL: Invalid last_status");
         return JS_FALSE;
     }
+#endif
 }
 
 JSClass CouchHTTPClass = {
@@ -320,9 +371,9 @@ JSPropertySpec CouchHTTPProperties[] = {
 };
 
 JSFunctionSpec CouchHTTPFunctions[] = {
-    {"_open", open, 3, 0, 0},
-    {"_setRequestHeader", setheader, 2, 0, 0},
-    {"_send", sendreq, 1, 0, 0},
+    {"_open", open, 3, JSFUN_FAST_NATIVE, 0},
+    {"_setRequestHeader", setheader, 2, JSFUN_FAST_NATIVE, 0},
+    {"_send", sendreq, 1, JSFUN_FAST_NATIVE, 0},
     {0, 0, 0, 0, 0}
 };
 

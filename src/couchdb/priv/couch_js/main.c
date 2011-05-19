@@ -28,14 +28,38 @@ int gExitCode = 0;
 #define FINISH_REQUEST(cx) \
     JS_EndRequest(cx); \
     JS_ClearContextThread(cx);
+#define FINISH_REQUEST_AND_DESTROY(cx) \
+    JS_EndRequest(cx); \
+    JS_DestroyContext(cx);
 #else
 #define SETUP_REQUEST(cx)
 #define FINISH_REQUEST(cx)
+#define FINISH_REQUEST_AND_DESTROY(cx) \
+    JS_DestroyContext(cx);
 #endif
 
+#ifdef JSFUN_CONSTRUCTOR
+#define JSFUN_FAST_NATIVE 0
+#endif
+
+static JSClass global_class = {
+    "GlobalClass",
+    JSCLASS_GLOBAL_FLAGS,
+    JS_PropertyStub,
+    JS_PropertyStub,
+    JS_PropertyStub,
+    JS_PropertyStub,
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
+    JS_FinalizeStub,
+    JSCLASS_NO_OPTIONAL_MEMBERS
+};
+
 static JSBool
-evalcx(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+evalcx(JSContext* cx, uintN argc, jsval* vp)
 {
+    jsval* argv = JS_ARGV(cx, vp);
     JSString *str;
     JSObject *sandbox;
     JSContext *subcx;
@@ -43,6 +67,9 @@ evalcx(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
     size_t srclen;
     JSBool ret = JS_FALSE;
     jsval v;
+#ifdef HAVE_COMPARTMENTS
+    JSCrossCompartmentCall *call = NULL;
+#endif
 
     sandbox = NULL;
     if(!JS_ConvertArguments(cx, argc, argv, "S / o", &str, &sandbox))
@@ -59,42 +86,70 @@ evalcx(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 
     SETUP_REQUEST(subcx);
 
+#ifdef HAVE_JS_GET_STRING_CHARS_AND_LENGTH
+    src = JS_GetStringCharsAndLength(cx, str, &srclen);
+#else
     src = JS_GetStringChars(str);
     srclen = JS_GetStringLength(str);
+#endif
 
+#ifdef HAVE_COMPARTMENTS
+    /* Re-use the compartment associated with the main context,
+     * rather than creating a new compartment */
+    JSObject *global = JS_GetGlobalObject(cx);
+    if(!global)
+    {
+       goto done;
+    }
+    call = JS_EnterCrossCompartmentCall(subcx, global);
+#endif
     if(!sandbox)
     {
+#ifdef HAVE_JS_NEW_GLOBAL_OBJECT
+        sandbox = JS_NewGlobalObject(subcx, &global_class);
+#else
         sandbox = JS_NewObject(subcx, NULL, NULL, NULL);
+#endif
         if(!sandbox || !JS_InitStandardClasses(subcx, sandbox)) goto done;
     }
 
     if(srclen == 0)
     {
-        *rval = OBJECT_TO_JSVAL(sandbox);
+        JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(sandbox));
     }
     else
     {
-        JS_EvaluateUCScript(subcx, sandbox, src, srclen, NULL, 0, rval);
+        JS_EvaluateUCScript(subcx, sandbox, src, srclen, NULL, 0, &JS_RVAL(cx, vp));
     }
-    
+
     ret = JS_TRUE;
 
 done:
-    FINISH_REQUEST(subcx);
-    JS_DestroyContext(subcx);
+#ifdef HAVE_COMPARTMENTS
+    if(call)
+    {
+        JS_LeaveCrossCompartmentCall(call);
+    }
+#endif
+    /* Don't use FINISH_REQUEST before destroying a context
+     * Destroying a context without a thread asserts on threadsafe
+     * debug builds */
+    FINISH_REQUEST_AND_DESTROY(subcx);
     return ret;
 }
 
 static JSBool
-gc(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+gc(JSContext* cx, uintN argc, jsval* vp)
 {
     JS_GC(cx);
+    JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return JS_TRUE;
 }
 
 static JSBool
-print(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+print(JSContext* cx, uintN argc, jsval* vp)
 {
+    jsval* argv = JS_ARGV(cx, vp);
     uintN i;
     char *bytes;
 
@@ -109,15 +164,51 @@ print(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 
     fputc('\n', stdout);
     fflush(stdout);
+    JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return JS_TRUE;
 }
 
 static JSBool
-quit(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+quit(JSContext* cx, uintN argc, jsval* vp)
 {
+    jsval* argv = JS_ARGV(cx, vp);
     JS_ConvertArguments(cx, argc, argv, "/ i", &gExitCode);
     return JS_FALSE;
 }
+
+#ifndef HAVE_JS_FGETS
+/* js_fgets is not linkable from C consumers with libmozjs >= 2.0,
+ * so we reimplement it here */
+#undef js_fgets
+static int
+couchjs_fgets(char *buf, int size, FILE *file)
+{
+    int n, i, c;
+    JSBool crflag;
+
+    n = size - 1;
+    if (n < 0)
+        return -1;
+
+    crflag = JS_FALSE;
+    for (i = 0; i < n && (c = getc(file)) != EOF; i++) {
+        buf[i] = c;
+        if (c == '\n') {        /* any \n ends a line */
+            i++;                /* keep the \n; we know there is room for \0 */
+            break;
+        }
+        if (crflag) {           /* \r not followed by \n ends line at the \r */
+            ungetc(c, file);
+            break;              /* and overwrite c in buf with \0 */
+        }
+        crflag = (c == '\r');
+    }
+
+    buf[i] = '\0';
+    return i;
+}
+#define js_fgets couchjs_fgets
+#endif
 
 static char*
 readfp(JSContext* cx, FILE* fp, size_t* buflen)
@@ -130,7 +221,6 @@ readfp(JSContext* cx, FILE* fp, size_t* buflen)
 
     bytes = JS_malloc(cx, byteslen);
     if(bytes == NULL) return NULL;
-    
     while((readlen = js_fgets(bytes+used, byteslen-used, stdin)) > 0)
     {
         used += readlen;
@@ -157,7 +247,7 @@ readfp(JSContext* cx, FILE* fp, size_t* buflen)
 }
 
 static JSBool
-readline(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
+readline(JSContext* cx, uintN argc, jsval* vp) {
     jschar *chars;
     JSString *str;
     char* bytes;
@@ -173,9 +263,10 @@ readline(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
     /* Treat the empty string specially */
     if(byteslen == 0)
     {
-        *rval = JS_GetEmptyStringValue(cx);
+        //JS_SET_RVAL(cx, vp, JS_GetEmptyStringValue(cx));
         JS_free(cx, bytes);
-        return JS_TRUE;
+        //return JS_TRUE;
+        return JS_FALSE;
     }
 
     /* Shrink the buffer to the real size */
@@ -191,22 +282,32 @@ readline(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
     JS_free(cx, bytes);
 
     if(!str) return JS_FALSE;
-
-    *rval = STRING_TO_JSVAL(str);
+    JS_SET_RVAL(cx, vp, STRING_TO_JSVAL(str));
 
     return JS_TRUE;
 }
 
 static JSBool
-seal(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
+seal(JSContext* cx, uintN argc, jsval* vp) {
+    jsval* argv = JS_ARGV(cx, vp);
     JSObject *target;
     JSBool deep = JS_FALSE;
 
     if (!JS_ConvertArguments(cx, argc, argv, "o/b", &target, &deep))
         return JS_FALSE;
-    if (!target)
+    if (!target) {
+        JS_SET_RVAL(cx, vp, JSVAL_VOID);
         return JS_TRUE;
-    return JS_SealObject(cx, target, deep);
+    }
+#ifdef HAVE_JS_FREEZE_OBJECT
+    JSBool res = deep ? JS_DeepFreezeObject(cx, target) : JS_FreezeObject(cx, target);
+#else
+    JSBool res = JS_SealObject(cx, target, deep);
+#endif
+    if (res == JS_TRUE)
+        JS_SET_RVAL(cx, vp, JSVAL_VOID);
+
+    return res;
 }
 
 static void
@@ -248,27 +349,13 @@ printerror(JSContext *cx, const char *mesg, JSErrorReport *report)
 }
 
 static JSFunctionSpec global_functions[] = {
-    {"evalcx", evalcx, 0, 0, 0},
-    {"gc", gc, 0, 0, 0},
-    {"print", print, 0, 0, 0},
-    {"quit", quit, 0, 0, 0},
-    {"readline", readline, 0, 0, 0},
-    {"seal", seal, 0, 0, 0},
+    {"evalcx", evalcx, 0, JSFUN_FAST_NATIVE, 0},
+    {"gc", gc, 0, JSFUN_FAST_NATIVE, 0},
+    {"print", print, 0, JSFUN_FAST_NATIVE, 0},
+    {"quit", quit, 0, JSFUN_FAST_NATIVE, 0},
+    {"readline", readline, 0, JSFUN_FAST_NATIVE, 0},
+    {"seal", seal, 0, JSFUN_FAST_NATIVE, 0},
     {0, 0, 0, 0, 0}
-};
-
-static JSClass global_class = {
-    "GlobalClass",
-    JSCLASS_GLOBAL_FLAGS,
-    JS_PropertyStub,
-    JS_PropertyStub,
-    JS_PropertyStub,
-    JS_PropertyStub,
-    JS_EnumerateStub,
-    JS_ResolveStub,
-    JS_ConvertStub,
-    JS_FinalizeStub,
-    JSCLASS_NO_OPTIONAL_MEMBERS
 };
 
 int
@@ -290,9 +377,18 @@ main(int argc, const char * argv[])
     JS_ToggleOptions(cx, JSOPTION_XML);
     
     SETUP_REQUEST(cx);
-
+#ifdef HAVE_COMPARTMENTS
+    global = JS_NewCompartmentAndGlobalObject(cx, &global_class, NULL);
+    if (!global) return 1;
+    JSCrossCompartmentCall *call = JS_EnterCrossCompartmentCall(cx, global);
+#elif HAVE_JS_NEW_GLOBAL_OBJECT
+    global = JS_NewGlobalObject(cx, &global_class);
+    if (!global) return 1;
+#else
     global = JS_NewObject(cx, &global_class, NULL, NULL);
     if (!global) return 1;
+    JS_SetGlobalObject(cx, global);
+#endif
     if (!JS_InitStandardClasses(cx, global)) return 1;
     
     for(sp = global_functions; sp->name != NULL; sp++)
@@ -309,8 +405,6 @@ main(int argc, const char * argv[])
     {
         return 1;
     }
-    
-    JS_SetGlobalObject(cx, global);
 
     if(argc > 2)
     {
@@ -328,9 +422,15 @@ main(int argc, const char * argv[])
         execute_script(cx, global, argv[1]);
     }
 
-    FINISH_REQUEST(cx);
+#ifdef HAVE_COMPARTMENTS
+    JS_LeaveCrossCompartmentCall(call);
+#endif
 
-    JS_DestroyContext(cx);
+    /* Don't use FINISH_REQUEST before destroying a context
+     * Destroying a context without a thread asserts on threadsafe
+     * debug builds */
+    FINISH_REQUEST_AND_DESTROY(cx);
+
     JS_DestroyRuntime(rt);
     JS_ShutDown();
 
