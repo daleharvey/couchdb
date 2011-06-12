@@ -12,6 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+export HOME=/data/data/%app_name%
+export LD_LIBRARY_PATH=$HOME/erlang/erts-5.7.5/bin:$HOME/couchdb/bin:$HOME/couchdb/lib/couchdb/bin
+export PATH=$HOME/erlang/bin:$HOME/couchdb/bin:$PATH
 BACKGROUND=false
 DEFAULT_CONFIG_DIR=%localconfdir%/default.d
 DEFAULT_CONFIG_FILE=%localconfdir%/%defaultini%
