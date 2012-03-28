@@ -56,23 +56,11 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
 
 handle_changes_req(#httpd{method='POST'}=Req, Db) ->
     couch_httpd:validate_ctype(Req, "application/json"),
-    handle_changes_req1(Req, Db);
+    handle_changes_req2(Req, Db);
 handle_changes_req(#httpd{method='GET'}=Req, Db) ->
-    handle_changes_req1(Req, Db);
+    handle_changes_req2(Req, Db);
 handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
     send_method_not_allowed(Req, "GET,HEAD,POST").
-
-handle_changes_req1(Req, #db{name=DbName}=Db) ->
-    AuthDbName = ?l2b(couch_config:get("couch_httpd_auth", "authentication_db")),
-    case AuthDbName of
-    DbName ->
-        % in the authentication database, _changes is admin-only.
-        ok = couch_db:check_is_admin(Db);
-    _Else ->
-        % on other databases, _changes is free for all.
-        ok
-    end,
-    handle_changes_req2(Req, Db).
 
 handle_changes_req2(Req, Db) ->
     MakeCallback = fun(Resp) ->
@@ -100,7 +88,8 @@ handle_changes_req2(Req, Db) ->
             send_chunk(Resp, "\n")
         end
     end,
-    ChangesArgs = parse_changes_query(Req),
+    TmpChangesArgs = parse_changes_query(Req),
+    ChangesArgs = override_changes_filter(Db, TmpChangesArgs),
     ChangesFun = couch_changes:handle_changes(ChangesArgs, Req, Db),
     WrapperFun = case ChangesArgs#changes_args.feed of
     "normal" ->
@@ -134,6 +123,19 @@ handle_changes_req2(Req, Db) ->
     couch_stats_collector:decrement(
         {httpd, clients_requesting_changes}
     )
+    end.
+
+override_changes_filter(#db{security=SecProps} = Db, ChangesArgs) ->
+    case catch couch_db:check_is_admin(Db) of
+        ok -> ChangesArgs;
+        _ ->
+            case couch_util:get_value(<<"changes">>, SecProps,
+                    couch_util:get_value(<<"filters">>, SecProps, {[]})) of
+                {[]} ->
+                    ChangesArgs;
+                {[{<<"changes">>, Filter}]} ->
+                    ChangesArgs#changes_args{filter=?b2l(Filter)}
+            end
     end.
 
 handle_compact_req(#httpd{method='POST'}=Req, Db) ->
