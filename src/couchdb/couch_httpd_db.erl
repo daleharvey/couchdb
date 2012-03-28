@@ -56,30 +56,30 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
 
 handle_changes_req(#httpd{method='POST'}=Req, Db) ->
     couch_httpd:validate_ctype(Req, "application/json"),
-    handle_changes_req1(Req, Db);
+    handle_changes_req2(Req, Db);
 handle_changes_req(#httpd{method='GET'}=Req, Db) ->
-    handle_changes_req1(Req, Db);
+    handle_changes_req2(Req, Db);
 handle_changes_req(#httpd{path_parts=[_,<<"_changes">>]}=Req, _Db) ->
     send_method_not_allowed(Req, "GET,HEAD,POST").
 
-handle_changes_req1(Req, #db{name=DbName}=Db) ->
-    AuthDbName = ?l2b(couch_config:get("couch_httpd_auth", "authentication_db")),
-    case AuthDbName of
-    DbName ->
-        % in the authentication database, _changes is admin-only.
-        ok = couch_db:check_is_admin(Db);
-    _Else ->
-        % on other databases, _changes is free for all.
-        ok
-    end,
-    handle_changes_req2(Req, Db).
-
+%% If the name is null, user is anonymous, always reject
+handle_changes_req2(_Req, #db{user_ctx=User}) when User#user_ctx.name =:= null ->
+    throw({unauthorized, <<"You are not a logged in.">>});
 handle_changes_req2(Req, Db) ->
     MakeCallback = fun(Resp) ->
         fun({change, Change, _}, "continuous") ->
             send_chunk(Resp, [?JSON_ENCODE(Change) | "\n"]);
-        ({change, Change, Prepend}, _) ->
-            send_chunk(Resp, [Prepend, ?JSON_ENCODE(Change)]);
+        ({change, {Change}, Prepend}, _) ->
+            case couch_util:get_value(<<"id">>, Change) of
+                <<"org.couchdb.user:", Id/binary>> ->
+                    case catch couch_users_db:after_doc_read(Id, doc, Db) of
+                        doc ->
+                            send_chunk(Resp, [Prepend, ?JSON_ENCODE({Change})]);
+                        not_found ->
+                            ok
+                    end;
+                _ -> ok
+            end;
         (start, "continuous") ->
             ok;
         (start, _) ->

@@ -12,7 +12,7 @@
 
 -module(couch_users_db).
 
--export([before_doc_update/2, after_doc_read/2]).
+-export([before_doc_update/2, after_doc_read/2, after_doc_read/3]).
 
 -include("couch_db.hrl").
 
@@ -87,7 +87,7 @@ after_doc_read(#doc{id = <<?DESIGN_DOC_PREFIX, _/binary>>} = Doc, Db) ->
         throw({forbidden,
         <<"Only administrators can view design docs in the users database.">>})
     end;
-after_doc_read(Doc, #db{user_ctx = UserCtx} = Db) ->
+after_doc_read(Doc,  #db{user_ctx = UserCtx} = Db) ->
     #user_ctx{name=Name} = UserCtx,
     DocName = get_doc_name(Doc),
     case (catch couch_db:check_is_admin(Db)) of
@@ -98,6 +98,18 @@ after_doc_read(Doc, #db{user_ctx = UserCtx} = Db) ->
     _ ->
         throw(not_found)
     end.
+
+after_doc_read(DocName, Doc, #db{user_ctx = UserCtx} = Db) ->
+    #user_ctx{name=Name} = UserCtx,
+    case (catch couch_db:check_is_admin(Db)) of
+    ok ->
+        Doc;
+    _ when Name =:= DocName ->
+        Doc;
+    _ ->
+        throw(not_found)
+    end.
+
 
 get_doc_name(#doc{body={Body}}) ->
     couch_util:get_value(?NAME, Body).

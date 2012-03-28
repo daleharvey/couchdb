@@ -98,6 +98,11 @@ couchTests.users_db_security = function(debug) {
     // create server admin
     run_on_modified_server([
         {
+          section: 'log',
+          key: 'level',
+          value: 'debug'
+        },
+        {
           section: "admins",
           key: "jan",
           value: "apple"
@@ -120,9 +125,9 @@ couchTests.users_db_security = function(debug) {
       var jchrisDoc = open_as(usersDb, "org.couchdb.user:jchris", "jchris");
       TEquals("org.couchdb.user:jchris", jchrisDoc._id);
 
-      // user should not be able to read /_users/_changes
+      // users should be able to listen for their own /_users/_changes
       var changes = changes_as(usersDb, "jchris");
-      TEquals("unauthorized", changes.error, "user can't read _changes");
+      TEquals(1, changes.results.length, "user can't read _changes");
 
       // new 'password' fields should trigger new hashing routine
       jchrisDoc.password = "couch";
@@ -155,7 +160,7 @@ couchTests.users_db_security = function(debug) {
         "should not_found opening another user's user doc");
 
 
-      // save a db amin 
+      // save a db amin
       var benoitcDoc = {
         _id: "org.couchdb.user:benoitc",
         type: "user",
