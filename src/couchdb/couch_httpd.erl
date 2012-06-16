@@ -616,26 +616,24 @@ log_request(#httpd{mochi_req=MochiReq,peer=Peer}, Code) ->
         Code
     ]).
 
+start_response_length(Req, Code, Headers, Length) ->
+    start_response(Req, Code, Headers, Length).
 
-start_response_length(#httpd{mochi_req=MochiReq}=Req, Code, Headers, Length) ->
+start_response(Req, Code, Headers) ->
+    start_response(Req, Code, Headers, undefined).
+
+start_response(#httpd{mochi_req=MochiReq}=Req, Code, Headers, Length) ->
     log_request(Req, Code),
     couch_stats_collector:increment({httpd_status_codes, Code}),
-    Resp = MochiReq:start_response_length({Code, Headers ++ server_header() ++ couch_httpd_auth:cookie_auth_header(Req, Headers), Length}),
+    CookieHeaders = couch_httpd_auth:cookie_auth_header(Req, Headers),
+    AllHeaders = Headers ++ server_header() ++ CookieHeaders,
+    Resp = case Length of
+        undefined -> MochiReq:start_response({Code, AllHeaders});
+        _ -> MochiReq:start_response_length({Code, AllHeaders, Length})
+    end,
     case MochiReq:get(method) of
     'HEAD' -> throw({http_head_abort, Resp});
     _ -> ok
-    end,
-    {ok, Resp}.
-
-start_response(#httpd{mochi_req=MochiReq}=Req, Code, Headers) ->
-    log_request(Req, Code),
-    couch_stats_collector:increment({httpd_status_codes, Code}),
-    CookieHeader = couch_httpd_auth:cookie_auth_header(Req, Headers),
-    Headers2 = Headers ++ server_header() ++ CookieHeader,
-    Resp = MochiReq:start_response({Code, Headers2}),
-    case MochiReq:get(method) of
-        'HEAD' -> throw({http_head_abort, Resp});
-        _ -> ok
     end,
     {ok, Resp}.
 
@@ -661,15 +659,8 @@ http_1_0_keep_alive(Req, Headers) ->
     end.
 
 start_chunked_response(#httpd{mochi_req=MochiReq}=Req, Code, Headers) ->
-    log_request(Req, Code),
-    couch_stats_collector:increment({httpd_status_codes, Code}),
     Headers2 = http_1_0_keep_alive(MochiReq, Headers),
-    Resp = MochiReq:respond({Code, Headers2 ++ server_header() ++ couch_httpd_auth:cookie_auth_header(Req, Headers2), chunked}),
-    case MochiReq:get(method) of
-    'HEAD' -> throw({http_head_abort, Resp});
-    _ -> ok
-    end,
-    {ok, Resp}.
+    start_response(Req, Code, Headers ++ Headers2, undefined).
 
 send_chunk(Resp, Data) ->
     case iolist_size(Data) of
