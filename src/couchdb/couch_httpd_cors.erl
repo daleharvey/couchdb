@@ -177,12 +177,14 @@ check_origin([A0|R], SO) ->
     end.
 
 db_check_origin(#httpd{mochi_req=MochiReq}, Db) ->
-
     case couch_config:get("httpd", "cors_enabled", "false") of
     "false" -> ok;
     "true" ->
         {SecProps} = couch_db:get_security(Db),
-        AcceptedOrigins = couch_util:get_value(<<"origins">>, SecProps, [<<"*">>]),
+        GlobalOriginsVal = couch_config:get("cors", "origins", []),
+        GlobalOrigins = re:split(GlobalOriginsVal, " "),
+        LocalOrigins = couch_util:get_value(<<"origins">>, SecProps, []),
+        AcceptedOrigins = GlobalOrigins ++ LocalOrigins,
         case MochiReq:get_header_value("Origin") of
         undefined -> ok;
         Origin ->
