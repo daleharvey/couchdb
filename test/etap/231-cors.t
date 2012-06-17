@@ -59,7 +59,7 @@ secobj() ->
     {[
         {<<"readers">>, {[{<<"names">>, []}, {<<"roles">>, []}]}},
         {<<"admins">>, {[{<<"names">>, []}, {<<"roles">>, []}]}},
-        {<<"origins">>, [<<"http://example.com">>]}
+        {<<"origins">>, {[{<<"http://example.com">>, []}]}}
     ]}.
 
 secobj2() ->
@@ -95,7 +95,7 @@ test() ->
 
     % Now enable CORS
     ok = couch_config:set("httpd", "cors_enabled", "true", false),
-    ok = couch_config:set("cors", "origins", "http://foo.com http://example.com", false),
+    ok = couch_config:set("cors", "http://example.com", "true", false),
 
     %% do tests
     test_incorrect_origin_simple_request(),
@@ -164,7 +164,7 @@ test_preflight_request() ->
     {ok, _, RespHeaders, _}  ->
         etap:is(proplists:get_value("Access-Control-Allow-Methods", RespHeaders),
             ?SUPPORTED_METHODS,
-            "Access-Control-Allow-Methods ok");
+            "test_preflight_request Access-Control-Allow-Methods ok");
     _ ->
         etap:is(false, true, "ibrowse failed")
     end.

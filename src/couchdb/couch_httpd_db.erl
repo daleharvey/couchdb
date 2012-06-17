@@ -34,7 +34,7 @@
 
 % Database request handlers
 handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
-        db_url_handlers=DbUrlHandlers}=Req)->
+        db_url_handlers=DbUrlHandlers,mochi_req=MochiReq}=Req)->
     case {Method, RestParts} of
     {'PUT', []} ->
         create_db_req(Req, DbName);
@@ -54,7 +54,11 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
             try
                 {SecProps} =  couch_db:get_security(Db),
                 Origins = couch_util:get_value(<<"origins">>, SecProps, []),
-                couch_httpd_cors:preflight_headers(Req, Origins)
+                Origin = MochiReq:get_header_value("Origin"),
+                case couch_util:get_value(Origin, Origins, false) of
+                    false -> couch_httpd_cors:preflight_headers(MochiReq);
+                    Else -> couch_httpd_cors:preflight_headers(MochiReq, Origins)
+                end
             after
                 catch couch_db:close(Db)
             end;
