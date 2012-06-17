@@ -32,7 +32,7 @@ server() ->
 main(_) ->
     test_util:init_code_path(),
 
-    etap:plan(11),
+    etap:plan(12),
     case (catch test()) of
         ok ->
             etap:end_tests();
@@ -95,10 +95,12 @@ test() ->
 
     % Now enable CORS
     ok = couch_config:set("httpd", "cors_enabled", "true", false),
-    ok = couch_config:set("cors", "origins", "http://foo.com http://example.bar.com", false),
+    ok = couch_config:set("cors", "origins", "http://foo.com http://example.com", false),
 
     %% do tests
     test_incorrect_origin_simple_request(),
+    test_incorrect_origin_preflight_request(),
+
     test_preflight_request(),
     test_db_request(),
     test_db_preflight_request(),
@@ -145,10 +147,18 @@ test_incorrect_origin_simple_request() ->
     {ok, _, RespHeaders, _} = ibrowse:send_req(server(), Headers, get, []),
     etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
             undefined,
-            "Access-Control-Allow-Origin ok").
+            "Specified invalid origin, no Access").
+
+test_incorrect_origin_preflight_request() ->
+    Headers = [{"Origin", "http://example.com"},
+               {"Access-Control-Request-Method", "GET"}],
+    {ok, _, RespHeaders, _} = ibrowse:send_req(server(), Headers, options, []),
+    etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
+            undefined,
+            "invalid origin").
 
 test_preflight_request() ->
-    Headers = [{"Origin", "http://127.0.0.1"},
+    Headers = [{"Origin", "http://example.com"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(server(), Headers, options, []) of
     {ok, _, RespHeaders, _}  ->
