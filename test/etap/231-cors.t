@@ -94,7 +94,7 @@ test() ->
     test_no_headers_db(),
 
     % Now enable CORS
-    ok = couch_config:set("http", "cors_enabled", "true", false),
+    ok = couch_config:set("httpd", "cors_enabled", "true", false),
 
     %% do tests
     test_simple_request(),
