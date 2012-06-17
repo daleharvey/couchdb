@@ -95,9 +95,10 @@ test() ->
 
     % Now enable CORS
     ok = couch_config:set("httpd", "cors_enabled", "true", false),
+    ok = couch_config:set("cors", "origins", "http://foo.com, http://example.bar.com", false),
 
     %% do tests
-    test_simple_request(),
+    test_incorrect_origin_simple_request(),
     test_preflight_request(),
     test_db_request(),
     test_db_preflight_request(),
@@ -124,12 +125,14 @@ test() ->
     couch_server_sup:stop(),
     ok.
 
+%% Cors is disabled, should not return Access-Control-Allow-Origin
 test_no_headers_server() ->
     Headers = [{"Origin", "http://127.0.0.1"}],
     {ok, _, Resp, _} = ibrowse:send_req(server(), Headers, get, []),
     etap:is(proplists:get_value("Access-Control-Allow-Origin", Resp),
             undefined, "No CORS Headers when disabled").
 
+%% Cors is disabled, should not return Access-Control-Allow-Origin
 test_no_headers_db() ->
     Headers = [{"Origin", "http://127.0.0.1"}],
     Url = server() ++ "etap-test-db",
@@ -137,17 +140,12 @@ test_no_headers_db() ->
     etap:is(proplists:get_value("Access-Control-Allow-Origin", Resp),
             undefined, "No CORS Headers when disabled").
 
-
-test_simple_request() ->
+test_incorrect_origin_simple_request() ->
     Headers = [{"Origin", "http://127.0.0.1"}],
-    case ibrowse:send_req(server(), Headers, get, []) of
-    {ok, _, RespHeaders, _} ->
-        etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
-            "http://127.0.0.1",
-            "Access-Control-Allow-Origin ok");
-    _ ->
-        etap:is(false, true, "ibrowse failed")
-    end.
+    {ok, _, RespHeaders, _} = ibrowse:send_req(server(), Headers, get, []),
+    etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
+            undefined,
+            "Access-Control-Allow-Origin ok").
 
 test_preflight_request() ->
     Headers = [{"Origin", "http://127.0.0.1"},
