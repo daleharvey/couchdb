@@ -1,4 +1,6 @@
 #!/usr/bin/env escript
+%% -*- erlang -*-
+
 % Licensed under the Apache License, Version 2.0 (the "License"); you may not
 % use this file except in compliance with the License. You may obtain a copy of
 % the License at
@@ -30,7 +32,7 @@ server() ->
 main(_) ->
     test_util:init_code_path(),
 
-    etap:plan(9),
+    etap:plan(11),
     case (catch test()) of
         ok ->
             etap:end_tests();
@@ -49,9 +51,9 @@ admin_user_ctx() -> {user_ctx, #user_ctx{roles=[<<"_admin">>]}}.
 set_admin_password(UserName, Password) ->
     Salt = binary_to_list(couch_uuids:random()),
     Hashed = couch_util:to_hex(crypto:sha(Password ++ Salt)),
-    couch_config:set("admins", UserName, 
+    couch_config:set("admins", UserName,
         "-hashed-" ++ Hashed ++ "," ++ Salt, false).
-    
+
 
 secobj() ->
     {[
@@ -66,12 +68,14 @@ secobj2() ->
         {<<"admins">>, {[{<<"names">>, []}, {<<"roles">>, []}]}}
     ]}.
 
-    
+
 test() ->
-    %% launch couchdb
-    couch_server_sup:start_link(test_util:config_files()),
+
     ibrowse:start(),
     crypto:start(),
+
+    %% launch couchdb
+    couch_server_sup:start_link(test_util:config_files()),
 
     %% initialize db
     timer:sleep(1000),
@@ -82,8 +86,15 @@ test() ->
     {ok, Db1} = couch_db:create(list_to_binary(dbname1()), [admin_user_ctx()]),
     {ok, Db2} = couch_db:create(list_to_binary(dbname2()), [admin_user_ctx()]),
 
-    ok = couch_db:set_security(Db1, secobj()), 
-    ok = couch_db:set_security(Db2, secobj2()), 
+    ok = couch_db:set_security(Db1, secobj()),
+    ok = couch_db:set_security(Db2, secobj2()),
+
+    % CORS is disabled by default
+    test_no_headers_server(),
+    test_no_headers_db(),
+
+    % Now enable CORS
+    ok = couch_config:set("http", "cors_enabled", "true", false),
 
     %% do tests
     test_simple_request(),
@@ -96,7 +107,7 @@ test() ->
 
     %% do tests with auth
     ok = set_admin_password("test", "test"),
-    
+
     test_db_preflight_auth_request(),
     test_db_origin_auth_request(),
 
@@ -109,10 +120,23 @@ test() ->
     couch_server:delete(list_to_binary(dbname1()), [admin_user_ctx()]),
     couch_server:delete(list_to_binary(dbname2()), [admin_user_ctx()]),
 
-
     timer:sleep(3000),
     couch_server_sup:stop(),
     ok.
+
+test_no_headers_server() ->
+    Headers = [{"Origin", "http://127.0.0.1"}],
+    {ok, _, Resp, _} = ibrowse:send_req(server(), Headers, get, []),
+    etap:is(proplists:get_value("Access-Control-Allow-Origin", Resp),
+            undefined, "No CORS Headers when disabled").
+
+test_no_headers_db() ->
+    Headers = [{"Origin", "http://127.0.0.1"}],
+    Url = server() ++ "etap-test-db",
+    {ok, _, Resp, _} = ibrowse:send_req(Url, Headers, get, []),
+    etap:is(proplists:get_value("Access-Control-Allow-Origin", Resp),
+            undefined, "No CORS Headers when disabled").
+
 
 test_simple_request() ->
     Headers = [{"Origin", "http://127.0.0.1"}],
@@ -126,10 +150,10 @@ test_simple_request() ->
     end.
 
 test_preflight_request() ->
-    Headers = [{"Origin", "http://127.0.0.1"}, 
+    Headers = [{"Origin", "http://127.0.0.1"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(server(), Headers, options, []) of
-    {ok, _, RespHeaders, _}  -> 
+    {ok, _, RespHeaders, _}  ->
         etap:is(proplists:get_value("Access-Control-Allow-Methods", RespHeaders),
             ?SUPPORTED_METHODS,
             "Access-Control-Allow-Methods ok");
@@ -151,7 +175,7 @@ test_db_request() ->
 
 test_db_preflight_request() ->
     Url = server() ++ "etap-test-db",
-    Headers = [{"Origin", "http://127.0.0.1"}, 
+    Headers = [{"Origin", "http://127.0.0.1"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(Url, Headers, options, []) of
     {ok, _, RespHeaders, _} ->
@@ -203,7 +227,7 @@ test_db1_wrong_origin_request() ->
 
 test_db_preflight_auth_request() ->
     Url = server() ++ "etap-test-db2",
-    Headers = [{"Origin", "http://127.0.0.1"}, 
+    Headers = [{"Origin", "http://127.0.0.1"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(Url, Headers, options, []) of
     {ok, _Status, RespHeaders, _} ->
@@ -222,7 +246,7 @@ test_db_origin_auth_request() ->
     Headers = [{"Origin", "http://127.0.0.1"}],
     Url = server() ++ "etap-test-db2",
 
-    case ibrowse:send_req(Url, Headers, get, [], 
+    case ibrowse:send_req(Url, Headers, get, [],
         [{basic_auth, {"test", "test"}}]) of
     {ok, _, RespHeaders, _Body} ->
         etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
