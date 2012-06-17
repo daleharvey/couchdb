@@ -53,8 +53,7 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
         {ok, Db} ->
             try
                 {SecProps} =  couch_db:get_security(Db),
-                Origins = couch_util:get_value(<<"origins">>, SecProps,
-                    [<<"*">>]),
+                Origins = couch_util:get_value(<<"origins">>, SecProps, []),
                 couch_httpd_cors:preflight_headers(Req, Origins)
             after
                 catch couch_db:close(Db)

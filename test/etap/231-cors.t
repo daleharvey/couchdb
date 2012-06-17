@@ -170,12 +170,12 @@ test_preflight_request() ->
     end.
 
 test_db_request() ->
-    Headers = [{"Origin", "http://127.0.0.1"}],
+    Headers = [{"Origin", "http://example.com"}],
     Url = server() ++ "etap-test-db",
     case ibrowse:send_req(Url, Headers, get, []) of
     {ok, _, RespHeaders, _Body} ->
         etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
-            "http://127.0.0.1",
+            "http://example.com",
             "db Access-Control-Allow-Origin ok");
     _ ->
         etap:is(false, true, "ibrowse failed")
@@ -183,7 +183,7 @@ test_db_request() ->
 
 test_db_preflight_request() ->
     Url = server() ++ "etap-test-db",
-    Headers = [{"Origin", "http://127.0.0.1"},
+    Headers = [{"Origin", "http://example.com"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(Url, Headers, options, []) of
     {ok, _, RespHeaders, _} ->
@@ -196,12 +196,12 @@ test_db_preflight_request() ->
 
 
 test_db_origin_request() ->
-    Headers = [{"Origin", "http://127.0.0.1"}],
+    Headers = [{"Origin", "http://example.com"}],
     Url = server() ++ "etap-test-db",
     case ibrowse:send_req(Url, Headers, get, []) of
     {ok, _, RespHeaders, _Body} ->
         etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
-            "http://127.0.0.1",
+            "http://example.com",
             "db origin ok");
     _ ->
         etap:is(false, true, "ibrowse failed")
@@ -235,13 +235,10 @@ test_db1_wrong_origin_request() ->
 
 test_db_preflight_auth_request() ->
     Url = server() ++ "etap-test-db2",
-    Headers = [{"Origin", "http://127.0.0.1"},
+    Headers = [{"Origin", "http://example.com"},
                {"Access-Control-Request-Method", "GET"}],
     case ibrowse:send_req(Url, Headers, options, []) of
     {ok, _Status, RespHeaders, _} ->
-        io:format("resp status ~p~n", [_Status]),
-
-        io:format("resp headers ~p~n", [RespHeaders]),
         etap:is(proplists:get_value("Access-Control-Allow-Methods", RespHeaders),
                 ?SUPPORTED_METHODS,
                 "db Access-Control-Allow-Methods ok");
@@ -251,14 +248,14 @@ test_db_preflight_auth_request() ->
 
 
 test_db_origin_auth_request() ->
-    Headers = [{"Origin", "http://127.0.0.1"}],
+    Headers = [{"Origin", "http://example.com"}],
     Url = server() ++ "etap-test-db2",
 
     case ibrowse:send_req(Url, Headers, get, [],
         [{basic_auth, {"test", "test"}}]) of
     {ok, _, RespHeaders, _Body} ->
         etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),
-            "http://127.0.0.1",
+            "http://example.com",
             "db origin ok");
     _ ->
         etap:is(false, true, "ibrowse failed")

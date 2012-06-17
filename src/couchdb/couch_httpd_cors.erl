@@ -82,15 +82,16 @@ headers() ->
     erlang:get(cors_headers).
 
 preflight_headers(MochiReq) ->
-    AcceptOrigins = couch_config:get("cors", "origins", []),
-    AcceptedOrigins = re:split(AcceptOrigins, " "),
-    preflight_headers(MochiReq, AcceptedOrigins).
+    preflight_headers(MochiReq, []).
 
 preflight_headers(#httpd{mochi_req=MochiReq}, AcceptedOrigins) ->
     preflight_headers(MochiReq, AcceptedOrigins);
-preflight_headers(MochiReq, AcceptedOrigins) ->
+preflight_headers(MochiReq, AcceptedOrigins1) ->
     SupportedMethods = ["GET", "HEAD", "POST", "PUT",
             "DELETE", "TRACE", "CONNECT", "COPY", "OPTIONS"],
+
+    AcceptOrigins = couch_config:get("cors", "origins", []),
+    AcceptedOrigins = AcceptedOrigins1 ++ re:split(AcceptOrigins, " "),
 
     %% get custom headers
     CustomHeaders = re:split(couch_config:get("cors",
@@ -124,7 +125,7 @@ preflight_headers(MochiReq, AcceptedOrigins) ->
                 {"Access-Control-Allow-Methods", string:join(SupportedMethods, ", ")}
             ],
 
-            %% now check the reqquested method
+            %% now check the requested method
             case MochiReq:get_header_value("Access-Control-Request-Method") of
             undefined ->
                 erlang:put(cors_headers, PreflightHeaders0);
