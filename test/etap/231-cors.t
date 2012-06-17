@@ -95,7 +95,7 @@ test() ->
 
     % Now enable CORS
     ok = couch_config:set("httpd", "cors_enabled", "true", false),
-    ok = couch_config:set("cors", "origins", "http://foo.com, http://example.bar.com", false),
+    ok = couch_config:set("cors", "origins", "http://foo.com http://example.bar.com", false),
 
     %% do tests
     test_incorrect_origin_simple_request(),

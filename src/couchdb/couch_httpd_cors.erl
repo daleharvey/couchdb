@@ -60,22 +60,26 @@ set_default_headers(MochiReq) ->
         erlang:put(cors_headers, []);
     _ ->
         case MochiReq:get_header_value("Origin") of
-            undefined ->
+        undefined ->
+            erlang:put(cors_headers, []);
+        Origin ->
+            AcceptOrigins = couch_config:get("cors", "origins", []),
+            AcceptedOrigins = re:split(AcceptOrigins, " "),
+            case check_origin(AcceptedOrigins, split_origin(Origin)) of
+            error ->
+                % reset cors_headers
                 erlang:put(cors_headers, []);
-            Origin ->
-                DefaultHeaders = [{"Access-Control-Allow-Origin", Origin},
-                                  {"Access-Control-Allow-Credentials", "true"}],
-                erlang:put(cors_headers, DefaultHeaders)
+            _Origin1 ->
+                CorsHeaders = [{"Access-Control-Allow-Origin", Origin},
+                               {"Access-Control-Allow-Credentials", "true"}],
+                erlang:put(cors_headers, CorsHeaders)
+            end
         end
     end.
 
 headers() ->
     Hdrs = erlang:get(cors_headers),
     erlang:get(cors_headers).
-
-split_origin(Origin) ->
-    {Scheme, Netloc, _, _, _} = mochiweb_util:urlsplit(Origin),
-    {string:to_lower(Scheme), string:to_lower(Netloc)}.
 
 preflight_headers(MochiReq) ->
     preflight_headers(MochiReq, [<<"*">>]).
@@ -152,6 +156,11 @@ preflight_headers(MochiReq, AcceptedOrigins) ->
             end
         end
     end.
+
+
+split_origin(Origin) ->
+    {Scheme, Netloc, _, _, _} = mochiweb_util:urlsplit(Origin),
+    {string:to_lower(Scheme), string:to_lower(Netloc)}.
 
 check_origin([], _SO) ->
     error;
