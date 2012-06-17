@@ -150,7 +150,7 @@ test_incorrect_origin_simple_request() ->
             "Specified invalid origin, no Access").
 
 test_incorrect_origin_preflight_request() ->
-    Headers = [{"Origin", "http://example.com"},
+    Headers = [{"Origin", "http://127.0.0.1"},
                {"Access-Control-Request-Method", "GET"}],
     {ok, _, RespHeaders, _} = ibrowse:send_req(server(), Headers, options, []),
     etap:is(proplists:get_value("Access-Control-Allow-Origin", RespHeaders),

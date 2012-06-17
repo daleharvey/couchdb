@@ -82,7 +82,9 @@ headers() ->
     erlang:get(cors_headers).
 
 preflight_headers(MochiReq) ->
-    preflight_headers(MochiReq, [<<"*">>]).
+    AcceptOrigins = couch_config:get("cors", "origins", []),
+    AcceptedOrigins = re:split(AcceptOrigins, " "),
+    preflight_headers(MochiReq, AcceptedOrigins).
 
 preflight_headers(#httpd{mochi_req=MochiReq}, AcceptedOrigins) ->
     preflight_headers(MochiReq, AcceptedOrigins);
