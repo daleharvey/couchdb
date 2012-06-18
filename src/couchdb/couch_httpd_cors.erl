@@ -52,148 +52,145 @@
 
 -export([set_default_headers/1, headers/0,
          preflight_headers/1, preflight_headers/2,
-         db_check_origin/2]).
+         db_check_origin/2, find_origin_params/1]).
 
+-define(DEFAULT_CORS_OPTIONS, [
+    {max_age, 12345},
+    {allow_methods, "PUT, POST, GET"}
+]).
+
+find_origin_params(Origin, false) ->
+    fetch_origin_opts(Origin);
+find_origin_params(Origin, Db) ->
+    {SecProps} = couch_db:get_security(Db),
+    {OriginsList} = couch_util:get_value(<<"origins">>, SecProps, {[]}),
+    case couch_util:get_value(Origin, OriginsList, false) of
+        false -> find_origin_params(Origin);
+        Else -> Else
+    end.
+
+find_origin_params(Origin) ->
+    case fetch_origin_opts(Origin) of
+        false -> fetch_origin_opts("wildcard");
+        Conf -> Conf
+    end.
 
 fetch_origin_opts(Key) ->
     case couch_config:get("cors", Key, false) of
         false ->
             false;
         "true" ->
-            [{max_age, 9345345}, {allow_methods, "PUT, POST, GET"}];
+            ?DEFAULT_CORS_OPTIONS;
         Config ->
             {ok, Props} = couch_util:parse_term(Config),
             Props
     end.
 
-get_origin_opts(Origin) ->
-    case fetch_origin_opts(Origin) of
-        false -> fetch_origin_opts("wildcard");
-        Conf -> Conf
-    end.
-
 set_default_headers(MochiReq) ->
-    case couch_config:get("httpd", "cors_enabled", "false") of
-    "false" ->
-        erlang:put(cors_headers, []);
-    _ ->
-        case MochiReq:get_header_value("Origin") of
+    case MochiReq:get_header_value("Origin") of
         undefined ->
             erlang:put(cors_headers, []);
         Origin ->
-            case get_origin_opts(Origin) of
-            false ->
-                erlang:put(cors_headers, []);
-            Conf ->
-                CorsHeaders = [{"Access-Control-Allow-Origin", Origin},
-                               {"Access-Control-Allow-Credentials", "true"}],
-                erlang:put(cors_headers, CorsHeaders)
+            case find_origin_params(Origin) of
+                false ->
+                    erlang:put(cors_headers, []);
+                _Conf ->
+                    CorsHeaders = [{"Access-Control-Allow-Origin", Origin},
+                                   {"Access-Control-Allow-Credentials", "true"}],
+                    erlang:put(cors_headers, CorsHeaders)
             end
-        end
     end.
 
 headers() ->
-    Hdrs = erlang:get(cors_headers),
     erlang:get(cors_headers).
 
 
 preflight_headers(MochiReq) ->
-    Origin = MochiReq:get_header_value("Origin"),
-    preflight_headers(MochiReq, get_origin_opts(Origin)).
+    preflight_headers(MochiReq, false).
 
-preflight_headers(MochiReq, AcceptedOrigins) ->
-    SupportedMethods = ["GET", "HEAD", "POST", "PUT",
-            "DELETE", "TRACE", "CONNECT", "COPY", "OPTIONS"],
-
-    %% get custom headers
-    CustomHeaders = re:split(couch_config:get("cors",
-            "headers",""), "\\s*,\\s*",[{return, list}]),
-
-    %% build list of headers to test
-    AllSupportedHeaders = ?SUPPORTED_HEADERS ++ CustomHeaders,
-    SupportedHeaders = [string:to_lower(H) || H <- AllSupportedHeaders],
-
-    %% get max age
-    MaxAge = list_to_integer(
-        couch_config:get("cors", "max_age", "1000")
-    ),
-
-    %% reset cors_headers
-    erlang:put(cors_headers, []),
-
+preflight_headers(MochiReq, DbObj) ->
     case MochiReq:get_header_value("Origin") of
-    undefined -> ok;
-    Origin ->
-        %% if origin validate it against accepted origin
-        case AcceptedOrigins of
-        false -> ok; %% don't set any preflight header
-        _Origin1 ->
-            ?LOG_DEBUG("check preflight cors request", []),
+        undefined -> ok;
+        Origin ->
+            case find_origin_params(Origin, DbObj) of
+                false -> ok;
+                _Else ->
+                    SupportedMethods = ["GET", "HEAD", "POST", "PUT",
+                                        "DELETE", "TRACE", "CONNECT", "COPY", "OPTIONS"],
 
-            PreflightHeaders0 = [
-                {"Access-Control-Allow-Origin", Origin},
-                {"Access-Control-Allow-Credentials", "true"},
-                {"Access-Control-Max-Age", MaxAge},
-                {"Access-Control-Allow-Methods", string:join(SupportedMethods, ", ")}
-            ],
+                    % get custom headers
+                    CustomHeaders = re:split(couch_config:get("cors", "headers",""),
+                                             "\\s*,\\s*",[{return, list}]),
 
-            %% now check the requested method
-            case MochiReq:get_header_value("Access-Control-Request-Method") of
-            undefined ->
-                erlang:put(cors_headers, PreflightHeaders0);
-            Method ->
-                case lists:member(Method, SupportedMethods) of
-                true ->
-                    %% method ok , check headers
-                    {FinalReqHeaders, ReqHeaders} = case MochiReq:get_header_value(
-                            "Access-Control-Request-Headers") of
-                        undefined -> {"", []};
-                        Headers ->
-                            %% transform header list in something we
-                            %% could check. make sure everything is a
-                            %% list
+                    % build list of headers to test
+                    AllSupportedHeaders = ?SUPPORTED_HEADERS ++ CustomHeaders,
+                    SupportedHeaders = [string:to_lower(H) || H <- AllSupportedHeaders],
 
-                            RH = [string:to_lower(H) || H <- re:split(Headers, ",\\s*",
-                                [{return,list},trim])],
-                            {Headers, RH}
-                    end,
+                    % get max age
+                    MaxAge = list_to_integer(
+                               couch_config:get("cors", "max_age", "1000")
+                              ),
 
-                    %% check if headers are supported
-                    case ReqHeaders -- SupportedHeaders of
-                    [] ->
-                        PreflightHeaders = PreflightHeaders0 ++
-                            [{"Access-Control-Allow-Headers", FinalReqHeaders}],
-                        erlang:put(cors_headers, PreflightHeaders);
-                    _ -> ok
-                    end;
-                false -> ok
-                end
+                    % reset cors_headers
+                    erlang:put(cors_headers, []),
+
+                    ?LOG_DEBUG("check preflight cors request", []),
+
+                    PreflightHeaders0 = [
+                        {"Access-Control-Allow-Origin", Origin},
+                        {"Access-Control-Allow-Credentials", "true"},
+                        {"Access-Control-Max-Age", MaxAge},
+                        {"Access-Control-Allow-Methods", string:join(SupportedMethods, ", ")}
+                    ],
+
+                    % now check the requested method
+                    case MochiReq:get_header_value("Access-Control-Request-Method") of
+                        undefined ->
+                            erlang:put(cors_headers, PreflightHeaders0);
+                        Method ->
+                            case lists:member(Method, SupportedMethods) of
+                                true ->
+                                    % method ok , check headers
+                                    {FinalReqHeaders, ReqHeaders} =
+                                        case MochiReq:get_header_value("Access-Control-Request-Headers") of
+                                            undefined -> {"", []};
+                                            Headers ->
+                                                % transform header list in something we
+                                                % could check. make sure everything is a
+                                                % list
+
+                                                RH = [string:to_lower(H)
+                                                      || H <- re:split(Headers, ",\\s*",
+                                                                       [{return,list},trim])],
+                                                {Headers, RH}
+                                        end,
+
+                                    % check if headers are supported
+                                    case ReqHeaders -- SupportedHeaders of
+                                        [] ->
+                                            PreflightHeaders = PreflightHeaders0 ++
+                                                [{"Access-Control-Allow-Headers", FinalReqHeaders}],
+                                            erlang:put(cors_headers, PreflightHeaders);
+                                        _ -> ok
+                                    end;
+                                false -> ok
+                            end
+                    end
             end
-        end
     end.
 
 db_check_origin(#httpd{mochi_req=MochiReq}, Db) ->
-    case couch_config:get("httpd", "cors_enabled", "false") of
-        "false" -> ok;
-        "true" ->
-            case MochiReq:get_header_value("Origin") of
-                undefined -> ok;
-                Origin ->
-                    {SecProps} = couch_db:get_security(Db),
-                    {OriginsList} = couch_util:get_value(<<"origins">>, SecProps, {[]}),
-                    Conf = case couch_util:get_value(Origin, OriginsList, false) of
-                               false -> get_origin_opts(Origin);
-                               Else -> Else
-                           end,
-                    case Conf of
-                        false ->
-                            % reset cors_headers
-                            erlang:put(cors_headers, []);
-                        _Else ->
-                            CorsHeaders = [{"Access-Control-Allow-Origin", Origin},
-                                           {"Access-Control-Allow-Credentials", "true"}],
-                            erlang:put(cors_headers, CorsHeaders)
-                    end
+    case MochiReq:get_header_value("Origin") of
+        undefined -> ok;
+        Origin ->
+            case find_origin_params(Origin, Db) of
+                false ->
+                    % reset cors_headers
+                    erlang:put(cors_headers, []);
+                _Else ->
+                    CorsHeaders = [{"Access-Control-Allow-Origin", Origin},
+                                   {"Access-Control-Allow-Credentials", "true"}],
+                    erlang:put(cors_headers, CorsHeaders)
             end
     end,
     ok.

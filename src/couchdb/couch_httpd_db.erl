@@ -52,13 +52,7 @@ handle_request(#httpd{path_parts=[DbName|RestParts],method=Method,
         case couch_db:open_int(DbName, []) of
         {ok, Db} ->
             try
-                {SecProps} =  couch_db:get_security(Db),
-                Origins = couch_util:get_value(<<"origins">>, SecProps, []),
-                Origin = MochiReq:get_header_value("Origin"),
-                case couch_util:get_value(Origin, Origins, false) of
-                    false -> couch_httpd_cors:preflight_headers(MochiReq);
-                    Else -> couch_httpd_cors:preflight_headers(MochiReq, Origins)
-                end
+                couch_httpd_cors:preflight_headers(MochiReq, Db)
             after
                 catch couch_db:close(Db)
             end;
