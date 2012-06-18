@@ -50,9 +50,10 @@
             "X-Http-Method-Override",
             "Content-Range"]).
 
--export([set_default_headers/1, headers/0,
-         preflight_headers/1, preflight_headers/2,
-         db_check_origin/2, find_origin_params/1]).
+-export([headers/0,
+         set_default_headers/1, set_db_headers/2,
+         preflight_headers/1, preflight_headers/2
+        ]).
 
 -define(DEFAULT_CORS_OPTIONS, [
     {max_age, 12345},
@@ -179,7 +180,7 @@ preflight_headers(MochiReq, DbObj) ->
             end
     end.
 
-db_check_origin(#httpd{mochi_req=MochiReq}, Db) ->
+set_db_headers(#httpd{mochi_req=MochiReq}, Db) ->
     case MochiReq:get_header_value("Origin") of
         undefined -> ok;
         Origin ->

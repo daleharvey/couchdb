@@ -243,7 +243,7 @@ delete_db_req(#httpd{user_ctx=UserCtx}=Req, DbName) ->
 do_db_req(#httpd{user_ctx=UserCtx, path_parts=[DbName|_]}=Req, Fun) ->
     case couch_db:open(DbName, [{user_ctx, UserCtx}]) of
     {ok, Db} ->
-        ok = couch_httpd_cors:db_check_origin(Req, Db),
+        ok = couch_httpd_cors:set_db_headers(Req, Db),
         try
             Fun(Req, Db)
         after
